@@ -48,6 +48,7 @@
     "bench:splice-precise": "bun --conditions browser test/splice-precise-bench.ts",
     "bench:recursive-models": "bun test/recursive-models-compare.ts",
     "bench:native": "bun --conditions browser test/native-vs-store-bench.ts",
+    "bench:first-touch": "bun --conditions browser test/proxy-first-touch-bench.ts",
     "bench:store": "bun --conditions browser test/store-throughput-bench.ts",
     "test:types": "tsc --noEmit --strict --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM --skipLibCheck test/types-proxy-contract.ts",
     "test:path-core": "bun test/path-core-parity.test.ts",
