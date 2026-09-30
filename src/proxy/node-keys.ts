@@ -2,9 +2,9 @@
 // child-cache miss: value accessors, `$subscribe`, store dispatch (mutate/pipe/select/...), array
 // methods and, on the root, the store-level operations.
 
-import { ARRAY_METHODS } from '../array/solid-array';
-import { createProjectionObservable, type ProjectionObservableOptions } from '../core/rx-interop';
-import type { NodeMethod, ProxyContext } from './proxy-context';
+import { ARRAY_METHODS } from '../array/array-ops';
+import { createProjectionObservable, subscription, type ProjectionObservableOptions } from '../core/rx-interop';
+import type { NodeMethod, ProxyContext } from './types';
 
 /** The slice of a node handler the key tables read. */
 export interface ProxyNode {
@@ -66,21 +66,13 @@ const buildArrayMethod: MethodBuilder = (node, method) => {
   };
 };
 
-// opinia5: value subscription for a path (backs $subscribe). Registers branch interest so a
-// subscription on an object/array also fires on descendant mutations, then cleans it up.
+// Value subscription for a path (backs $subscribe): registers branch interest so a subscription on an
+// object/array also fires on descendant mutations, and releases it on close.
 const buildSubscribe: MethodBuilder = ({ ctx: { engine }, path, read }) =>
   (...args) => {
     const [cb, options] = args as [(value: unknown) => void, ProjectionObservableOptions<unknown> | undefined];
     engine.addBranchSub(path);
-    const sub = createProjectionObservable(read, options).subscribe(cb);
-    let closed = false;
-    const close = () => {
-      if (closed) return;
-      closed = true;
-      sub.unsubscribe();
-      engine.removeBranchSub(path);
-    };
-    return { unsubscribe: close, dispose: close };
+    return subscription(createProjectionObservable(read, options).subscribe(cb), () => engine.removeBranchSub(path));
   };
 
 const accessor: KeyResolver = (node) => node.read;

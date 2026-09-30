@@ -3,10 +3,9 @@
 import { createMemo } from 'solid-js';
 import { createJsonPathPlan } from '@adsq/jsnq/data-engine';
 import { isBranch } from '../internal/util';
-import { subscription, once } from '../internal/subscription';
 import type { SolidBridgeHost, SolidJsnqBridge } from '../jsnq/solid-pipeline-bridge';
 import { commitPrecise, type CommitHost } from './store-commit';
-import { createProjectionObservable, type ProjectionObservableOptions } from './rx-interop';
+import { createProjectionObservable, once, subscription, type ProjectionObservableOptions } from './rx-interop';
 import type { SolidStoreReactivity } from './proxy-types';
 import type { SolidLiveQuery, SolidStoreOptions } from './store-options';
 

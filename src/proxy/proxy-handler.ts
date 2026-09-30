@@ -1,9 +1,9 @@
-// The Proxy traps of one node. Reads try the child cache first, then the key tables, then build the
-// child proxy; writes and deletes go through the store mutator and wake the touched signals.
+// The Proxy traps of one node: reads try the child cache, then the key tables, then build the child
+// proxy; writes and deletes go through the store mutator and wake the touched signals.
 
 import { getParentPath, isValidPath } from '../internal/path';
 import { isBranch } from '../internal/util';
-import type { NodeMethod, ProxyContext } from './proxy-context';
+import type { NodeMethod, ProxyContext } from './types';
 import { NODE_KEYS, ROOT_KEYS, type KeyTable, type ProxyNode } from './node-keys';
 
 const MAX_CHILD_CACHE_SIZE = 256;
@@ -28,8 +28,8 @@ function symbolProperty(k: symbol, read: () => unknown): unknown {
 
 export class NodeHandler implements ProxyHandler<object>, ProxyNode {
   private readonly keys: KeyTable;
-  // Child proxy identity is stable for the store lifetime; this per-node cache avoids rebuilding the
-  // child path and consulting the global registry on every read. Special keys are never cached.
+  // Child proxy identity is stable, so this per-node cache skips rebuilding the child path and the
+  // registry lookup on every read. Special keys are never cached.
   private children: Record<string, object> | null = null;
   private childCount = 0;
   private methods: Record<string, NodeMethod> | null = null;

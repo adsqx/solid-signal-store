@@ -1,5 +1,5 @@
 import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
-import type { SolidWakeMode } from '../internal/wake-modes';
+import type { SolidWakeMode } from '../proxy/types';
 import type { ProxyMetrics } from './devtools-contract';
 import type { ProjectionObservableOptions } from './rx-interop';
 

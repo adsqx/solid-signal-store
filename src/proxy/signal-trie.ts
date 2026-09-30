@@ -1,7 +1,6 @@
 /**
- * Path trie of the observed signals: branch wake costs O(observed descendants of the branch)
- * instead of an O(all signals) scan. Paths are split on '.', the dot-joined form the proxy
- * builds; a prefix never matches itself, only its present descendants.
+ * Path trie of the observed signals: branch wake costs O(observed descendants of the branch) instead
+ * of an O(all signals) scan. A prefix never matches itself, only its present descendants.
  */
 
 interface TrieNode {

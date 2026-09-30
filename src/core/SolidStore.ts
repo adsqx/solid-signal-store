@@ -16,7 +16,7 @@ import {
 import { createSolidProxy, type SolidProxyOptions, type SolidWakeMode, type StoreMutator } from '../proxy/solid-proxy';
 import { arrayOp, queryArray, createArrayChain, type ArrayOpHost } from '../array/solid-array';
 import { deleteResult } from '../internal/util';
-import { WAKE_MODE_BRANCH, isWakeMode } from '../internal/wake-modes';
+import { WAKE_MODE_BRANCH, isWakeMode } from '../proxy/types';
 import { publishDev } from './dev-bus';
 import {
   EMPTY_DEV_STREAM,
