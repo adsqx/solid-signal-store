@@ -1,13 +1,12 @@
 /**
- * store-solid — SolidJS port of the reactive store engine.
- * Full API parity with original, dramatically simpler reactivity layer thanks to Solid.
- * 
- * See README.md for the public API, contracts, and architecture overview.
+ * store-solid — SolidJS port of the reactive store engine, with full API parity and a much simpler
+ * reactivity layer. See README.md for the public API, contracts and architecture overview.
  */
 
-// Core
-export { SolidStore, createSolidStore, useSolidStore, waitForStore, onSolidDevAction } from './core/SolidStore';
-export type { SolidStoreOptions, WaitForStoreOptions } from './core/SolidStore';
+export { SolidStore, createSolidStore } from './core/SolidStore';
+export { useSolidStore, waitForStore } from './core/registry';
+export { onSolidDevAction } from './core/dev-service';
+export type { WaitForStoreOptions } from './core/registry';
 
 // Proxy (for advanced wiring / testing)
 export { createSolidProxy } from './proxy/solid-proxy';
@@ -16,15 +15,14 @@ export type { StoreMutator, SolidProxyOptions, SolidWakeMode } from './proxy/sol
 // Rx interop (minimal for .select parity)
 export { createProjectionObservable } from './core/rx-interop';
 
-// Re-export key types for convenience
-export type { SolidStoreProxy, StoreArray, StoreLeaf, SolidStoreReactivity, SolidProxyMetrics } from './core/proxy-types';
+export type { SolidProxyMetrics, SolidStoreOptions, SolidStoreProxy, SolidStoreReactivity, StoreArray, StoreLeaf } from './core/types';
 export type {
   DevStream,
   DevToolsEvent,
   ProxyMetrics,
   SolidDevtoolsAdapter,
   StoreDevToolsAction,
-} from './core/devtools-contract';
+} from './core/dev-service';
 
 // Internal utilities (for advanced use / future extensions)
 export * as InternalPath from './internal/path';

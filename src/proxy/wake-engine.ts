@@ -4,7 +4,7 @@ import { createSignal, type Accessor, type Setter } from 'solid-js';
 import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
 import { enumerateAncestors, normalizePath } from '../internal/path';
 import { BoundedCache, isBranch } from '../internal/util';
-import type { SolidProxyMetrics, SolidStoreReactivity } from '../core/proxy-types';
+import type { SolidProxyMetrics, SolidStoreReactivity } from '../core/types';
 import { SignalTrie } from './signal-trie';
 import { WAKE_MODE_BRANCH, type SolidWakeMode, type StoreMutator } from './types';
 

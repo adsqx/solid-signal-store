@@ -1,5 +1,5 @@
 import { createEffect, createRoot } from 'solid-js';
-import type { StoreSubscription } from './proxy-types';
+import type { StoreSubscription } from './types';
 
 const INITIAL = Symbol('initial');
 

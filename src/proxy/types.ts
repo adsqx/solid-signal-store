@@ -2,7 +2,7 @@
 // and the context every proxy node receives.
 
 import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
-import type { SolidStoreReactivity } from '../core/proxy-types';
+import type { SolidStoreReactivity } from '../core/types';
 import type { ProxyRegistry } from './solid-proxy';
 import type { WakeEngine } from './wake-engine';
 
