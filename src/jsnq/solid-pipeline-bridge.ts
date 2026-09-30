@@ -182,7 +182,10 @@ export function applyPipelineMutationDetailed(
   return { value: applyPipelineMutation(ops, currentValue, options), mutations: null };
 }
 
-export function createPipeline(currentValue: unknown, ops: readonly unknown[], options: SolidPipelineOptions = {}) {
+// The `any` type argument is kept on purpose: it is the published return type, and narrowing
+// it to JsonLike would break consumers that read the wrapper's results as their own types.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createPipeline(currentValue: unknown, ops: readonly unknown[], options: SolidPipelineOptions = {}): PipelineWrapper<any> {
   return buildWrapper(currentValue, ops, collectPipelineIntent(ops).actions.length > 0, options);
 }
 
@@ -198,9 +201,10 @@ export interface SolidBridgeHost {
   solidJsnqBridge?: SolidJsnqBridge;
 }
 
-export function registerSolidJsnqBridge(target: SolidBridgeHost = globalThis as SolidBridgeHost): SolidJsnqBridge {
-  target.__SOLID_PIPELINE_BRIDGE = solidJsnqBridge;
-  target.solidJsnqBridge = solidJsnqBridge;
+export function registerSolidJsnqBridge(target: unknown = globalThis): SolidJsnqBridge {
+  const host = target as SolidBridgeHost;
+  host.__SOLID_PIPELINE_BRIDGE = solidJsnqBridge;
+  host.solidJsnqBridge = solidJsnqBridge;
   return solidJsnqBridge;
 }
 
