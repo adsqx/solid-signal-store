@@ -1,9 +1,30 @@
+/**
+ * Browser demo for @adsq/solid-signal-store. The Playwright suite in test/browser drives this
+ * file, so its labels, test ids and behaviour are part of the test contract.
+ *
+ * Layout
+ *   1. Stores      two named stores: `app` (Store + Design views) and `dashboard`.
+ *   2. StoreView   board of 160 cells, wake-mode + batch toggles, JSNQ mutation, dynamic key.
+ *   3. DesignView  sliders/inputs writing straight into store.design.componentA.*.
+ *   4. DashboardView  metrics, history and services of the separately named store.
+ *   5. App         tab switcher and the timer that feeds the dashboard store.
+ *
+ * Conventions used throughout (see the root README, "In Solid Components"):
+ *   - a leaf is called to read it:           store.board.leftClicks()
+ *   - a write is a plain assignment:         store.board.leftClicks = n
+ *   - list items are plain snapshots, so a field that changes over time is read through its
+ *     index:                                 store.board.rows[r].cells[c].value()
+ */
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { createSolidStore, onSolidDevAction, waitForStore } from '@adsq/solid-signal-store';
 import '@adsq/solid-signal-store/jsnq';
 import where from '@adsq/jsnq/operators/where';
 import update from '@adsq/jsnq/operators/update';
+
+// ---------------------------------------------------------------------------------------------
+// Stores
+// ---------------------------------------------------------------------------------------------
 
 type Tab = 'store' | 'design' | 'dashboard';
 type WakeMode = 'grained' | 'container';
@@ -23,6 +44,8 @@ function makeBoard(rows = 10, columns = 16) {
   }));
 }
 
+// `preciseMutationWake` lets the flat `users.mutate(where(...), update(...))` below wake only the
+// changed leaves and the `users` branch instead of every observed descendant.
 const appApi = createSolidStore({
   board: {
     rows: makeBoard(),
@@ -61,15 +84,25 @@ const dashboardApi = createSolidStore({
   history: [42, 48, 44, 56, 61, 58, 68, 72, 69, 77, 74, 82],
 }, 'dashboard');
 
+// The stores are used through an untyped view so event handlers can assign directly
+// (`cell.value = ...`). On a typed store direct assignment is a type error; typed code assigns
+// through `api.setValue(path, value)` or a cast write view (see the README, "TypeScript").
 const store = appApi.store as any;
 const dashboard = dashboardApi.store as any;
 
+// ---------------------------------------------------------------------------------------------
+// Store view: fine-grained board, wake modes, batching, JSNQ, dynamic keys
+// ---------------------------------------------------------------------------------------------
+
 function StoreView() {
+  // Only the row/cell *structure* is read as a whole; each cell then binds its own leaves below.
   const rows = createMemo(() => store.board.rows());
   const [events, setEvents] = createSignal<string[]>([]);
 
   const log = (message: string) => setEvents((current) => [message, ...current].slice(0, 8));
 
+  // The Batch toggle wraps the multi-write handlers in api.batch(): one reactive flush instead of
+  // one per write. Writes are synchronous and readable either way.
   const runBoardMutation = (mutation: () => void) => {
     if (store.board.batch()) appApi.batch(mutation);
     else mutation();
@@ -98,12 +131,14 @@ function StoreView() {
     });
   };
 
+  // 'grained' wakes the exact written path; 'container' also wakes its parents.
   const setWakeMode = (mode: WakeMode) => {
     store.board.wakeMode = mode;
     appApi.wakeUp(mode);
     log(`wake mode: ${mode}`);
   };
 
+  // JSNQ bulk mutation; enabled by the `@adsq/solid-signal-store/jsnq` import at the top.
   const mutateActiveUsers = () => {
     store.users.mutate(
       where('active', '===', true),
@@ -112,6 +147,7 @@ function StoreView() {
     log('JSNQ updated active user scores');
   };
 
+  // `runtime` starts as `{}`; `lastAction` is created on first assignment.
   const addDynamicKey = () => {
     store.runtime.lastAction = `dynamic-${Date.now()}`;
     log(`runtime.lastAction = ${store.runtime.lastAction()}`);
@@ -124,6 +160,7 @@ function StoreView() {
     store.board.lastCell = '';
   });
 
+  // Devtools events of the `app` store (enabled in App) feed the "Runtime events" panel.
   onMount(() => {
     const unsubscribe = onSolidDevAction((event) => {
       if (event.storeName === 'app') log(`${event.type}: ${String(event.payload?.path ?? '')}`);
@@ -189,6 +226,10 @@ function StoreView() {
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+// Design view: every control writes one nested leaf, every style reads one nested leaf
+// ---------------------------------------------------------------------------------------------
+
 function DesignView() {
   const component = store.design.componentA;
   const setNumber = (key: string, value: string) => component[key] = Number(value);
@@ -231,6 +272,10 @@ function DesignView() {
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+// Dashboard view: a separately named store fed by a timer (see App)
+// ---------------------------------------------------------------------------------------------
+
 function DashboardView() {
   return (
     <section class="page" data-testid="solid-dashboard-page">
@@ -243,23 +288,31 @@ function DashboardView() {
       </div>
       <div class="dashboard-grid">
         <section class="chart"><header><h2>Throughput history</h2><span>{dashboard.history.length} samples</span></header><div class="bars"><For each={dashboard.history()}>{(value: number) => <i style={{ height: `${value}%` }}></i>}</For></div></section>
-        <section class="services"><header><h2>Services</h2><span>realtime</span></header><div class="service-row head"><span>Service</span><span>Status</span><span>RPS</span><span>Latency</span></div><For each={dashboard.services()}>{(service: any) => <div class="service-row"><strong>{service.name}</strong><span class="healthy">{service.status}</span><span>{service.rps}</span><span>{service.latency} ms</span></div>}</For></section>
+        <section class="services"><header><h2>Services</h2><span>realtime</span></header><div class="service-row head"><span>Service</span><span>Status</span><span>RPS</span><span>Latency</span></div><For each={dashboard.services()}>{(service: any, index) => <div class="service-row"><strong>{service.name}</strong><span class="healthy">{service.status}</span><span>{dashboard.services[index()].rps()}</span><span>{dashboard.services[index()].latency()} ms</span></div>}</For></section>
       </div>
     </section>
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// App: tabs, devtools wiring, and the timer that feeds the dashboard store
+// ---------------------------------------------------------------------------------------------
 
 function App() {
   const [tab, setTab] = createSignal<Tab>('store');
   let interval: ReturnType<typeof setInterval> | undefined;
 
   onMount(async () => {
+    // Resolves at once here because the store is created at module scope; it is the same call a
+    // separately loaded consumer would use to wait for a store created elsewhere.
     await waitForStore('dashboard', { timeoutMs: 1_000 });
+    // Devtools live in their own entry, loaded only in development.
     if (import.meta.env.DEV) {
       const { createSolidDevtools } = await import('@adsq/solid-signal-store/devtools');
       appApi.attachDevtools(createSolidDevtools());
       appApi.enableDevTools('app');
     }
+    // One batch per tick: the metric, service and history writes flush as a single update.
     interval = setInterval(() => dashboardApi.batch(() => {
       dashboard.metrics.requests = dashboard.metrics.requests() + Math.floor(120 + Math.random() * 80);
       dashboard.metrics.throughput = Math.floor(2600 + Math.random() * 500);

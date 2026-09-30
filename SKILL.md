@@ -7,10 +7,10 @@ description: Use @adsq/solid-signal-store to build SolidJS state as a callable n
 
 A reactive store for SolidJS built on a callable nested proxy. Reading a path returns its
 value and subscribes the caller to that exact path; assigning to it writes and wakes only
-the consumers of that path. State reads and writes look like ordinary nested object access.
+the consumers of that path. There are no actions, reducers, or setter functions.
 
-Install: `npm install solid-js @adsq/solid-signal-store`. `@adsq/jsnq` is a peer dependency
-and installs automatically; declare it too when the app imports JSNQ operators directly.
+Install: `npm install solid-js @adsq/solid-signal-store @adsq/jsnq`. `solid-js` and
+`@adsq/jsnq` are peer dependencies (Solid `>=1.8 <2`). The package is ESM only.
 
 ## The architecture rule — read this first
 
@@ -24,12 +24,19 @@ State goes in the store. JSX reads the store. Handlers assign to the store. That
 whole loop. If a component needs derived data, use `createMemo` that *reads store paths* —
 never one that captures a snapshot once.
 
-```tsx
+<!-- check: prelude -->
+```ts
+import { createMemo, createRoot, createSignal } from 'solid-js';
+
 // WRONG — a second source of truth that will drift
-const [name, setName] = createSignal(store.user.name());
+const [name] = createSignal(store.user.name());
 
 // RIGHT — derives from the store on every read
-const greeting = createMemo(() => `Hello ${store.user.name()}`);
+const greeting = createRoot(() => createMemo(() => `Hello ${store.user.name()}`));
+
+write.user.name = 'Ada';
+name();                    // => 'Ann'
+greeting();                // => 'Hello Ada'
 ```
 
 ## Where this store is a particularly good fit
@@ -43,68 +50,96 @@ inputs, each with its own narrow set of consumers.
 
 ## Creating a store
 
+Create each store once, at module scope, and import it where it is used. Never create a
+store inside a component body.
+
+<!-- check: typecheck -->
 ```ts
 import { createSolidStore } from '@adsq/solid-signal-store';
 
-const api = createSolidStore({
+type State = {
+  user: { name: string; tags: string[] };
+  dashboard: { tiles: number };
+  services: { name: string; rps: number }[];
+};
+
+export const api = createSolidStore<State>({
   user: { name: 'Ann', tags: ['admin'] },
   dashboard: { tiles: 12 },
   services: [{ name: 'api', rps: 120 }],
 }, 'app');
 
-const store = api.store;
+export const store = api.store;                  // reads: store.user.name()
+export const write = store as unknown as State;  // typed writes: write.user.name = 'Ada'
 ```
+
+Use a `type` alias for the state (an `interface` does not satisfy the
+`Record<string, unknown>` constraint). Store names are global: creating a store under a name
+that is already registered **destroys the previous store**, so keep names unique.
 
 When a module owns the `api`/`store` reference, use it directly. `waitForStore` is only for
 a separately loaded consumer that may run before the owner creates the named store:
 
+<!-- check: typecheck -->
 ```ts
 import { useSolidStore, waitForStore } from '@adsq/solid-signal-store';
 
-const pending = await waitForStore('app', { timeoutMs: 5_000 });
-useSolidStore('app'); // synchronous; throws when missing
+const app = await waitForStore<{ tiles: number }>('app', { timeoutMs: 5_000 });
+const same = useSolidStore('app'); // synchronous; throws when missing
 ```
 
-`api` also carries `batch`, `wakeUp`, `destroy`, `attachDevtools`, and `enableDevTools`.
+`api` also carries `batch`, `wakeUp`, `setValue`, `readStore`, `mutate`, `select`,
+`computedOf`, `array`, `destroy`, `attachDevtools`, and `enableDevTools`.
 
 ## Reading and writing
 
+<!-- check: prelude -->
 ```ts
-store.user.name();                                  // reactive read
-store.user.name = 'Ada';                            // write
-store.dashboard.tiles = store.dashboard.tiles() + 1;
-store.user.tags.push('maintainer');
-store.user.tags.pop();
-store.user.preferences = {};                        // dynamic nested keys
-store.user.preferences.theme = 'dark';
+store.user.name();                                     // => 'Ann'
+write.user.name = 'Ada';
+write.dashboard.tiles = store.dashboard.tiles() + 1;
+write.user.tags.push('maintainer');
+store.user.tags.pop();                                 // => 'maintainer'
+write.user.preferences.theme = 'dark';                 // dynamic key under an index signature
+store.user.preferences.theme();                        // => 'dark'
+write.user.preferences.theme = undefined;              // assigning undefined deletes the key
+store.dashboard.tiles();                               // => 13
 ```
 
-For static type safety, declare optional/dynamic fields in the state interface or use an
-index signature such as `[key: string]: unknown`.
+**TypeScript rejects `store.user.name = 'Ada'`** on a typed store (the property type is the
+accessor). In JavaScript, or on an `any`-typed store, direct assignment works. In typed code
+assign through the cast write view above, or use `api.setValue('user.name', 'Ada')`. Never
+*read* through the write view. Declare optional fields or an index signature when a key is
+not in the initial state.
+
+Reads return the store's own objects, not copies: never mutate the result of `store.user()`.
 
 ## In JSX
 
+<!-- check: prelude, ssr=Dashboard contains=Ann|12|admin|api|120|samples -->
 ```tsx
-function Dashboard() {
+import { For } from 'solid-js';
+
+export function Dashboard() {
   return (
     <>
       <h1>{store.user.name()}</h1>
       <p>{store.dashboard.tiles()} tiles</p>
 
-      <For each={store.user.tags()}>{(tag: string) =>
+      <For each={store.user.tags()}>{(tag) =>
         <span class="tag">{tag}</span>
       }</For>
 
-      <For each={store.services()}>{(service: any) =>
+      <For each={store.services()}>{(service, i) =>
         <div class="row">
           <strong>{service.name}</strong>
-          <span>{service.rps}</span>
+          <span>{store.services[i()].rps()}</span>
         </div>
       }</For>
 
       <span>{store.history.length} samples</span>
 
-      <button onClick={() => store.dashboard.tiles = store.dashboard.tiles() + 1}>
+      <button onClick={() => { write.dashboard.tiles = store.dashboard.tiles() + 1; }}>
         Add tile
       </button>
     </>
@@ -112,25 +147,32 @@ function Dashboard() {
 }
 ```
 
-Three rules cover every component:
+Four rules cover every component:
 
 1. **A leaf is called.** `{store.user.name()}`. The call *is* the reactive read, so Solid
-   updates only the text node bound to that path.
+   updates only the text node bound to that path. A path without the call is a function
+   object: `store.flag ? a : b` is always `a`, and `store.user.name === 'Ada'` is always false.
 2. **An array is called to iterate it, and each item is a plain value.** Write
    `<For each={store.services()}>` and then `{service.name}` — **no parentheses on the
    item**. Items are snapshots, not nested accessors. This is the most common mistake.
-3. **`length` is reactive without a call.** `{store.history.length}` tracks pushes and pops
+3. **A field that changes over time is read through its index.** The array node wakes on
+   push, pop, shift, unshift, splice, sort, reverse and whole-array assignment, not when a
+   field of one item is edited or one item is replaced by index. Bind the leaf:
+   `store.services[i()].rps()`, or
+   `store.board.rows[rowIndex()].cells[colIndex()].value()` for nested collections.
+4. **`length` is reactive without a call.** `{store.history.length}` tracks pushes and pops
    without materialising the array.
 
-Index into nested collections directly when the exact leaf matters:
-`store.board.rows[rowIndex()].cells[colIndex()].value()`.
+The same reasoning applies to any container: in the default `grained` mode a memo or effect
+that reads `store.user()` is not woken by `store.user.name = ...`. Read the leaves you need.
 
 ## Batching and wake modes
 
+<!-- check: prelude -->
 ```ts
 api.batch(() => {
-  store.user.name = 'Ada';
-  store.dashboard.tiles = 16;
+  write.user.name = 'Ada';
+  write.dashboard.tiles = 16;
 });
 
 api.wakeUp('grained');              // default mode for subsequent writes
@@ -145,18 +187,31 @@ api.wakeUp('user.name', 'leaf');    // wake this path and its parent chain now
 | `leaf` | Exact path plus parent chain | For effects/memos consuming a container. |
 
 `fine` and `exact` alias `grained`; `container`, `parents`, and `branch` alias `leaf`. The
-one-argument form changes the default; the two-argument form is a one-off targeted wake.
+one-argument form changes the default; the two-argument form is a one-off targeted wake. The
+default can also be set at creation with `{ wakeParentsOnChange: true }`.
 
-Writes inside `batch()` stay synchronous and immediately readable. A single write needs no
-batch. The store option `preciseMutationWake: true` lets eligible flat JSNQ mutations wake
-only the changed branch, item, and leaf; deep/structural mutations fall back to a branch
-commit.
+Writes inside `batch()` stay synchronous and immediately readable; Solid flushes effects
+once after the outermost batch. A single write needs no batch. The store option
+`preciseMutationWake: true` lets eligible flat JSNQ mutations wake only the changed branch,
+item, and leaf; deep or structural mutations fall back to a branch commit.
+
+## Arrays
+
+Proxied array methods: `push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse`
+(mutating) and `filter`, `map`, `find`, `findIndex`, `some`, `every`, `includes`,
+`indexOf`, `length` (reading). Anything else (`reduce`, `forEach`, `slice`) is **not**
+proxied and silently return the wrong value: call the array first,
+`store.list().reduce(...)`. `store.list.array()` (or
+`api.array('list')`) returns a chainable copy-and-commit helper with `update(i, v)`,
+`updateByFind`, `delete`, `deleteByIndex`, and predicate-or-value lookups.
 
 ## Queries and bulk mutations (JSNQ)
 
-The core proxy does not import the JSNQ bridge. Import it once in an application that calls
-`mutate`, `$query`, or `$liveQuery` — otherwise those calls throw an actionable error:
+The core proxy does not import the JSNQ bridge. Import it once, during bootstrap, in an
+application that calls `mutate`, `$query`, or `$liveQuery` — otherwise those calls throw an
+actionable error:
 
+<!-- check: prelude -->
 ```ts
 import '@adsq/solid-signal-store/jsnq';
 import where from '@adsq/jsnq/operators/where';
@@ -167,19 +222,34 @@ store.userList.mutate(
   update('score', (score: number) => score + 1),
 );
 
-const active = store.userList.$query(where('active', '===', true));    // snapshot
-const live   = store.userList.$liveQuery(where('active', '===', true)); // accessor
+const active = store.userList.$query(where('active', '===', true));      // snapshot (unknown[])
+const one = store.userList.$queryOne(where('id', '===', 2));             // first match or null
+const live = store.userList.$liveQuery(where('active', '===', true));    // callable accessor
 
-live();                                   // read inside a Solid owner
-const sub = live.subscribe((v) => {});     // optional subscription
+live();                                    // read inside a Solid owner
+const sub = live.subscribe((users) => users.length);   // optional subscription
 sub.unsubscribe();
 live.dispose();
+
+active.length;                             // => 1
 ```
 
-Dispose live queries and subscriptions created outside a component owner.
+`$query` / `$queryOne` are snapshots. `$liveQuery` / `$liveQueryOne` recompute when any
+descendant of the queried branch changes. A live query registers branch interest when it is
+created and only `dispose()` releases it, so inside a component call
+`onCleanup(() => live.dispose())`.
+
+## Derived values and subscriptions
+
+`createMemo(() => ...)` over store reads is the default. `api.computedOf((s) => ...)` is the
+same memo scoped to the store, and `api.select((s) => ...)` returns `{ subscribe, value }`
+for a push subscription. `node.$subscribe(cb, { equals: () => false })` observes a path; on
+an object or array pass `equals: () => false`, otherwise in-place changes are suppressed
+because the reference is unchanged.
 
 ## Devtools and cleanup
 
+<!-- check: prelude, typecheck -->
 ```ts
 if (import.meta.env.DEV) {
   const { createSolidDevtools } = await import('@adsq/solid-signal-store/devtools');
@@ -190,11 +260,26 @@ if (import.meta.env.DEV) {
 api.destroy(); // idempotent; clears caches, subscriptions, and the devtools adapter
 ```
 
+## Pitfalls that are easy to hit
+
+- Do not use a state key named like the API: `length`, `filter`, `map`, `find`, `push`,
+  `mutate`, `pipe`, `array`, `select`, `query`, `computedOf`, `toJSON`, `valueOf`, or one
+  that starts with `$`. Property access on those names reaches the API, not your data.
+- At the store root, `batch`, `wakeUp`, `setValue`, `readStore`, and `deleteValue` are also
+  reserved names.
+- Under Node, SSR, or a test runner Solid resolves its server build, which does not re-run
+  effects. Enable the `browser` export condition (`bun --conditions browser`, or
+  `resolve.conditions`) when testing reactive behaviour.
+- Solid 2 is not supported (`solid-js >=1.8 <2`).
+
 ## Checklist when writing code against this store
 
 - Never mirror store data into `createSignal`; read the store path instead.
-- Call leaves (`path()`), do not call loop items (`item.field`).
+- Create stores once at module scope with a unique name.
+- Call leaves (`path()`), do not call loop items (`item.field`); bind changing item fields
+  through the index (`store.list[i()].field()`).
+- In TypeScript, assign through a typed write view or `api.setValue`, never read through it.
 - Import `@adsq/solid-signal-store/jsnq` once before using `mutate` / `$query`.
 - Reach for `api.batch()` only when several writes must land as one update.
-- Dispose live queries created outside a component owner.
+- Dispose live queries and subscriptions you create; use `onCleanup` in components.
 - Do not import from `dist/` or deep internal paths; use the documented entries only.
