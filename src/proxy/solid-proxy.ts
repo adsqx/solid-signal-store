@@ -3,7 +3,11 @@
 import { createSignal, batch, type Accessor, type Setter } from 'solid-js';
 import { enumerateAncestors, getParentPath, isValidPath, normalizePath } from '../internal/path'; // delegates to SST (internal/path.ts) — all parent walks now reuse shared path core (max unification, zero naked path building)
 import { ARRAY_METHODS } from '../array/solid-array';
-import { createMutationResult, type JsonMutationResult } from '@adsq/jsnq/data-engine';
+import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
+import { BoundedCache } from '../internal/bounded-cache';
+import { isBranch } from '../internal/guards';
+import { deleteResult, setResult } from '../internal/mutation-results';
+import { WAKE_MODE_BRANCH, type SolidWakeMode } from '../internal/wake-modes';
 import { createProjectionObservable, type ProjectionObservableOptions } from '../core/rx-interop';
 import type { SolidStoreReactivity } from '../core/proxy-types';
 
@@ -21,7 +25,7 @@ export interface StoreMutator {
   _wakeParentsOnChange?: boolean;
 }
 
-export type SolidWakeMode = 'grained' | 'fine' | 'exact' | 'container' | 'parents' | 'leaf' | 'branch';
+export type { SolidWakeMode };
 
 export interface SolidProxyOptions {
   strictInvalidPath?: boolean;
@@ -89,9 +93,7 @@ function isRootDispatchMethod(method: string): boolean {
 }
 
 function signalEquals(prev: unknown, next: unknown): boolean {
-  const prevIsObject = prev !== null && typeof prev === 'object';
-  const nextIsObject = next !== null && typeof next === 'object';
-  return !prevIsObject && !nextIsObject && Object.is(prev, next);
+  return !isBranch(prev) && !isBranch(next) && Object.is(prev, next);
 }
 
 /**
@@ -216,9 +218,8 @@ class SolidProxyManager {
   private branchSubs = new Map<string, number>();
   private proxies = new Map<string, WeakRef<object>>();
   private arrayMethodHandlers = new Map<string, Function>();
-  private ancestorPathCache = new Map<string, string[]>();
+  private ancestorPathCache = new BoundedCache<string, string[]>(1000);
   private finalization?: FinalizationRegistry<string>;
-  private static readonly MAX_ANCESTOR_CACHE_SIZE = 1000;
   private static readonly MAX_CHILD_CACHE_SIZE = 256;
 
   constructor(private mutator: StoreMutator, private opts: SolidProxyOptions = {}) {
@@ -277,8 +278,7 @@ class SolidProxyManager {
   wakePath(path: string, mode: SolidWakeMode = 'grained'): void {
     const normalized = normalizePath(path);
     if (!normalized) return;
-    const branchWake = mode === 'container' || mode === 'parents' || mode === 'leaf' || mode === 'branch';
-    if (branchWake) {
+    if (WAKE_MODE_BRANCH[mode]) {
       for (const target of this.getBranchWakeTargets(normalized)) this.updateSignal(target);
       return;
     }
@@ -304,14 +304,7 @@ class SolidProxyManager {
   private getBranchWakeTargets(path: string): string[] {
     const normalized = normalizePath(path);
     const cached = this.ancestorPathCache.get(normalized);
-    if (cached) return cached;
-    if (this.ancestorPathCache.size >= SolidProxyManager.MAX_ANCESTOR_CACHE_SIZE) {
-      const first = this.ancestorPathCache.keys().next().value;
-      if (first !== undefined) this.ancestorPathCache.delete(first);
-    }
-    const targets = [...enumerateAncestors(normalized)].reverse();
-    this.ancestorPathCache.set(normalized, targets);
-    return targets;
+    return cached ?? this.ancestorPathCache.set(normalized, [...enumerateAncestors(normalized)].reverse());
   }
 
   /** Creates the base callable + its getter for a path. */
@@ -368,7 +361,7 @@ class SolidProxyManager {
 
 
   private isBranchMutation(value: unknown): boolean {
-    return value !== null && typeof value === 'object';
+    return isBranch(value);
   }
 
   private wakeFromMutation(result: JsonMutationResult): void {
@@ -772,31 +765,13 @@ export function createStoreMutator(base: {
     write: (p, v) => {
       const previous = base.read(p);
       const result = base.write(p, v);
-      return result ?? createMutationResult({
-        path: p,
-        kind: 'set',
-        previous,
-        next: v,
-        existed: previous !== undefined,
-        changed: [p],
-        inserted: previous === undefined ? [p] : [],
-        branchReplaced: (previous !== null && typeof previous === 'object') || (v !== null && typeof v === 'object'),
-        affectedPaths: [p],
-      });
+      return result ?? setResult(p, previous, v);
     },
     batch: base.batch ?? (f => f()),
     delete: base.delete ?? ((p) => {
       const previous = base.read(p);
       const result = base.write(p, undefined);
-      return result ?? createMutationResult({
-        path: p,
-        kind: 'delete',
-        previous,
-        existed: previous !== undefined,
-        deleted: previous !== undefined ? [p] : [],
-        branchReplaced: previous !== null && typeof previous === 'object',
-        affectedPaths: [p],
-      });
+      return result ?? deleteResult(p, previous);
     }),
     prefetch: base.prefetch ?? (() => {}),
     emitDevAction: base.emitDevAction ?? (() => {}),

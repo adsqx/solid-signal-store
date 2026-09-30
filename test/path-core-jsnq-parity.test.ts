@@ -3,10 +3,11 @@
  *
  * Outcome recorded by this suite:
  *  - setByPathCore(obj, path, value)  ==  writeJsonPathValue(obj, path, value)   -> delegated
- *  - getBySegmentsCore(..., { guardForbidden: true })  has NO jsnq counterpart:
- *    getJsonBySegments performs no forbidden-segment check, so delegating it would
- *    silently drop prototype-pollution protection. It stays local, and this suite
- *    asserts that the protection is still in force.
+ *  - getBySegmentsCore(..., { guardForbidden: true })  ==  getJsonBySegments on forbidden
+ *    segments with the installed @adsq/jsnq (>= 0.1.4 guards and returns undefined). It stays
+ *    local anyway: the peer range is ^0.1.0 and older jsnq releases performed no guard,
+ *    so delegating would need a peer-floor bump. This suite asserts core still guards and
+ *    that the installed jsnq agrees.
  *
  * Run: bun --conditions browser test/path-core-jsnq-parity.test.ts
  */
@@ -52,8 +53,8 @@ for (const path of ['a.__proto__.x', 'constructor']) {
   const forbidden = ['__proto__'];
   ok(getBySegmentsCore(target, forbidden, { guardForbidden: true }) === undefined, 'core guards forbidden segments');
   ok(
-    getJsonBySegments(target, forbidden) === Object.prototype,
-    'jsnq does NOT guard — it hands back Object.prototype, so delegating would leak it',
+    getJsonBySegments(target, forbidden) === undefined,
+    'installed jsnq guards forbidden segments too, matching core',
   );
   ok(getBySegments(target, forbidden) === undefined, 'public getBySegments still refuses forbidden segments');
 }

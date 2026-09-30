@@ -6,9 +6,12 @@ export interface SplitPathOptions {
   filterEmpty?: boolean;
 }
 
-export interface PathMutationOptions {
-  createArrays?: boolean;
+export interface GuardOptions {
   guardForbidden?: boolean;
+}
+
+export interface PathMutationOptions extends GuardOptions {
+  createArrays?: boolean;
 }
 
 export interface ResolveVersionPathOptions {
@@ -38,6 +41,11 @@ export function splitPathCore(path: string, options: SplitPathOptions = {}): str
   return options.filterEmpty ? parts.filter(Boolean) : parts;
 }
 
+/** Split into non-empty segments (the shape every mutation/lookup path wants). */
+export function splitSegmentsCore(path: string, normalize = true): string[] {
+  return splitPathCore(path, { normalize, filterEmpty: true });
+}
+
 export function isNumericSegmentCore(segment: string | undefined | null): boolean {
   return !!segment && NUMERIC_SEGMENT_RE.test(segment);
 }
@@ -51,6 +59,13 @@ export function hasForbiddenPathSegmentCore(segments: readonly unknown[]): boole
     if (isForbiddenPathSegmentCore(segment)) return true;
   }
   return false;
+}
+
+/** Normalizes `path`, returning null when it is empty or not a valid normalized path. */
+function validNormalizedOrNull(path: string): string | null {
+  if (!path) return null;
+  const normalized = normalizePathCore(path);
+  return isValidNormalizedPathCore(normalized) ? normalized : null;
 }
 
 export function isValidNormalizedPathCore(normalized: string): boolean {
@@ -78,7 +93,7 @@ export function assertSafePathSegmentsCore(segments: readonly unknown[], path: s
 export function getBySegmentsCore<T = unknown>(
   obj: unknown,
   segments: PathSegments,
-  options: { guardForbidden?: boolean } = {}
+  options: GuardOptions = {}
 ): T | undefined {
   if (options.guardForbidden && hasForbiddenPathSegmentCore(segments)) return undefined;
   let current: unknown = obj;
@@ -92,7 +107,7 @@ export function getBySegmentsCore<T = unknown>(
 export function getByPathCore<T = unknown>(
   obj: unknown,
   path: string,
-  options: { rootReturnsObject?: boolean; guardForbidden?: boolean; filterEmpty?: boolean } = {}
+  options: GuardOptions & { rootReturnsObject?: boolean; filterEmpty?: boolean } = {}
 ): T | undefined {
   if (!obj) return undefined;
   if (!path) return options.rootReturnsObject ? (obj as T) : undefined;
@@ -109,7 +124,7 @@ export function setByPathCore(
   value: unknown,
   options: PathMutationOptions = {}
 ): void {
-  const segments = splitPathCore(path, { filterEmpty: true });
+  const segments = splitSegmentsCore(path);
   if (segments.length === 0) return;
   if (options.guardForbidden !== false) assertSafePathSegmentsCore(segments, path);
 
@@ -138,7 +153,7 @@ export function setByPathCore(
   }
 }
 
-export function pathExistsCore(obj: unknown, path: string, options: { guardForbidden?: boolean } = {}): boolean {
+export function pathExistsCore(obj: unknown, path: string, options: GuardOptions = {}): boolean {
   if (!obj || typeof obj !== 'object' || !path) return false;
   const segments = splitPathCore(path);
   if (options.guardForbidden !== false && hasForbiddenPathSegmentCore(segments)) return false;
@@ -177,21 +192,18 @@ export function getPathKeyCore(path: string): string | null {
 }
 
 export function nearestNumericContainerPathCore(path: string): string | null {
-  if (!path) return null;
-  const normalized = normalizePathCore(path);
-  if (!isValidNormalizedPathCore(normalized)) return null;
-  const parts = splitPathCore(normalized, { normalize: false }).filter(Boolean);
-  const index = parts.findIndex((segment) => isNumericSegmentCore(segment));
+  const normalized = validNormalizedOrNull(path);
+  if (!normalized) return null;
+  const parts = normalized.split('.');
+  const index = parts.findIndex(isNumericSegmentCore);
   return index > 0 ? parts.slice(0, index).join('.') : null;
 }
 
 export function directNumericParentPathCore(path: string): string | null {
-  if (!path) return null;
-  const normalized = normalizePathCore(path);
-  if (!isValidNormalizedPathCore(normalized)) return null;
-  const parts = splitPathCore(normalized, { normalize: false }).filter(Boolean);
-  const last = parts[parts.length - 1];
-  return isNumericSegmentCore(last) && parts.length > 1 ? parts.slice(0, -1).join('.') : null;
+  const normalized = validNormalizedOrNull(path);
+  if (!normalized) return null;
+  const parts = normalized.split('.');
+  return parts.length > 1 && isNumericSegmentCore(parts[parts.length - 1]) ? parts.slice(0, -1).join('.') : null;
 }
 
 export function resolveVersionPathCore(normalized: string, options: ResolveVersionPathOptions): string {
@@ -204,10 +216,9 @@ export function resolveVersionPathCore(normalized: string, options: ResolveVersi
 }
 
 export function enumerateAncestorPathsCore(path: string, options: { includeNumericParent?: boolean } = {}): string[] {
-  if (!path || typeof path !== 'string') return [];
-  const normalized = normalizePathCore(path);
-  if (!isValidNormalizedPathCore(normalized)) return [];
-  const parts = splitPathCore(normalized, { normalize: false }).filter(Boolean);
+  const normalized = typeof path === 'string' ? validNormalizedOrNull(path) : null;
+  if (!normalized) return [];
+  const parts = normalized.split('.');
   const out: string[] = [];
   for (let i = parts.length; i >= 1; i--) {
     out.push(parts.slice(0, i).join('.'));
@@ -220,7 +231,7 @@ export function enumerateAncestorPathsCore(path: string, options: { includeNumer
 }
 
 export function resolveParentAndKeyCore(obj: unknown, path: string): { parent: unknown; key: string | null; segments: string[] } {
-  const segments = splitPathCore(path, { filterEmpty: true });
+  const segments = splitSegmentsCore(path);
   if (segments.length === 0) return { parent: obj, key: null, segments };
   const key = segments[segments.length - 1]!;
   let parent: unknown = obj;

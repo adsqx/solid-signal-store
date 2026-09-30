@@ -17,7 +17,6 @@ import { createArrayChain, ARRAY_QUERY_METHODS, ARRAY_MUTATION_METHODS, applyArr
 import {
   cloneJsonData,
   createJsonPathPlan,
-  createMutationResult,
   deleteJsonPath,
   readJsonPath,
   writeJsonPath,
@@ -25,6 +24,9 @@ import {
   type JsonMutationResult,
 } from '@adsq/jsnq/data-engine';
 import { createProjectionObservable, type ProjectionObservableOptions } from './rx-interop';
+import { isBranch } from '../internal/guards';
+import { deleteResult, setResult, touchResult } from '../internal/mutation-results';
+import { WAKE_MODE_BRANCH, isWakeMode } from '../internal/wake-modes';
 import {
   EMPTY_DEV_STREAM,
   type DevStream,
@@ -33,7 +35,7 @@ import {
   type StoreDevToolsAction,
 } from './devtools-contract';
 import type { SolidJsnqBridge } from '../jsnq/solid-pipeline-bridge';
-import type { SolidStoreProxy, SolidStoreReactivity } from './proxy-types';
+import type { SolidStoreProxy, SolidStoreReactivity, StoreLiveQuery } from './proxy-types';
 
 // --- Minimal local contracts (no reliance on incomplete synced types) ---
 
@@ -42,13 +44,7 @@ import type { SolidStoreProxy, SolidStoreReactivity } from './proxy-types';
  * push subscription (reuses the rx-interop projection observable), `.dispose()` to release the
  * per-query branch interest. Same `where(...)` DSL as `mutate`.
  */
-export type SolidLiveQuery<T> = (() => T) & {
-  subscribe(
-    cb: (value: T) => void,
-    options?: ProjectionObservableOptions<T>
-  ): { unsubscribe(): void; dispose(): void };
-  dispose(): void;
-};
+export type SolidLiveQuery<T> = StoreLiveQuery<T>;
 
 export interface SolidStoreOptions {
   strict?: {
@@ -102,7 +98,6 @@ export interface SolidStoreOptions {
 }
 
 type DevListener = (e: StoreDevToolsAction & { storeName?: string }) => void;
-const GLOBAL_WAKE_MODES = new Set<SolidWakeMode>(['grained', 'fine', 'exact', 'container', 'parents', 'leaf', 'branch']);
 
 // Global dev bus (parity with original DevToolsActionSubject / emit patterns)
 const devListeners = new Set<DevListener>();
@@ -207,15 +202,7 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
 
   #delete(p: string): JsonMutationResult {
     if (!p) {
-      return createMutationResult({
-        path: '',
-        kind: 'delete',
-        previous: this.data,
-        existed: true,
-        deleted: [''],
-        branchReplaced: true,
-        affectedPaths: [''],
-      });
+      return deleteResult('', this.data, true, true);
     }
     return deleteJsonPath(this.data, p);
   }
@@ -230,10 +217,6 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
     const result = this.#set(p, v);
     this.#wakeMutation(result);
     this.emitDevAction({ type: 'SET_VALUE', payload: { path: p, value: v } });
-  }
-
-  #isBranchValue(value: unknown): boolean {
-    return value !== null && typeof value === 'object';
   }
 
   #wakeMutation(result: JsonMutationResult): void {
@@ -260,29 +243,11 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
         const previous = curr[k];
         if (!(k in n)) {
           if (existed) delete curr[k];
-          mutations.push(createMutationResult({
-            path: k,
-            kind: 'delete',
-            previous,
-            existed,
-            deleted: existed ? [k] : [],
-            branchReplaced: false,
-            affectedPaths: [k],
-          }));
+          mutations.push(deleteResult(k, previous, existed, false));
           this.emitDevAction({ type: 'DELETE', payload: { path: k } });
         } else {
           curr[k] = n[k];
-          mutations.push(createMutationResult({
-            path: k,
-            kind: 'set',
-            previous,
-            next: n[k],
-            existed,
-            changed: [k],
-            inserted: existed ? [] : [k],
-            branchReplaced: this.#isBranchValue(previous) || this.#isBranchValue(n[k]),
-            affectedPaths: [k],
-          }));
+          mutations.push(setResult(k, previous, n[k], existed));
           this.emitDevAction({ type: 'SET_VALUE', payload: { path: k, value: n[k] } });
         }
       }
@@ -303,10 +268,10 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
     const results: JsonMutationResult[] = [];
     for (const rel of relPaths) {
       const leaf = `${p}.${rel}`;
-      results.push(createMutationResult({ path: leaf, kind: 'set', changed: [leaf], affectedPaths: [leaf], branchReplaced: false }));
+      results.push(touchResult(leaf));
     }
     // Wake the branch signal so whole-array consumers refresh, without syncDescendants.
-    results.push(createMutationResult({ path: p, kind: 'set', changed: [p], affectedPaths: [p], branchReplaced: false }));
+    results.push(touchResult(p));
     this.#wakeMutations(results);
     this.emitDevAction({ type: 'SET_VALUE', payload: { path: p, value: v } });
   }
@@ -342,7 +307,7 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
     this.emitDevAction({ type: 'DELETE', payload: { path } });
   }
 
-  // Uses shared constants from array layer (single source of truth — zero duplication with executeArrayOperation)
+  // Uses shared constants from array layer (single source of truth: array/array-ops.ts)
   private isArrayQueryMethod(m: string): boolean {
     return ARRAY_QUERY_METHODS.has(m);
   }
@@ -396,7 +361,7 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
       const nextLength = args.length === 1 ? cur.push(args[0]) : cur.push(...args);
       this.batch(() => {
         for (let i = 0; i < args.length; i++) {
-          this.reactivity?.wakeArrayTail(path, startIndex + i, this.#isBranchValue(args[i]));
+          this.reactivity?.wakeArrayTail(path, startIndex + i, isBranch(args[i]));
         }
       });
       return { result: nextLength };
@@ -406,7 +371,7 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
       const lastIndex = cur.length - 1;
       const popped = cur.pop();
       this.batch(() => {
-        this.reactivity?.wakeArrayTail(path, lastIndex, this.#isBranchValue(popped));
+        this.reactivity?.wakeArrayTail(path, lastIndex, isBranch(popped));
       });
       return { result: popped };
     }
@@ -692,9 +657,8 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
   wakeUp(mode: SolidWakeMode): void;
   wakeUp(path: string, mode?: SolidWakeMode): void;
   wakeUp(pathOrMode: string, mode?: SolidWakeMode): void {
-    if (mode === undefined && GLOBAL_WAKE_MODES.has(pathOrMode as SolidWakeMode)) {
-      const normalized = pathOrMode === 'fine' || pathOrMode === 'grained' || pathOrMode === 'exact' ? false : true;
-      this._wakeParentsOnChange = normalized;
+    if (mode === undefined && isWakeMode(pathOrMode)) {
+      this._wakeParentsOnChange = WAKE_MODE_BRANCH[pathOrMode];
       return;
     }
     this.reactivity?.wakeSignalPath(pathOrMode, mode ?? 'grained');
