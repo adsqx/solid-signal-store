@@ -33,16 +33,32 @@ Consumers of the published package can install it as a skill; see the README sec
 - **Keep the demo in sync.** `examples/browser-demo` is not decoration — the browser tests
   assert against it, so an API change usually means updating it too.
 - Match the surrounding code: no new dependencies, no framework fighting, no duplicated
-  path logic (`src/utils/path-utils.ts` is the single source of truth for path parsing).
+  path logic (`src/internal/path.ts` is the single source of truth for path parsing;
+  `src/utils/path-utils.ts` is only a frozen facade over it).
 
 ## Verify before proposing a change
 
 ```sh
 bun run typecheck
-bun run test          # 16 contract suites
+bun run test          # all contract suites (see the `test` script)
 bun run build
 bun run test:browser  # Playwright against the real demo
 ```
 
-All four must pass. `bun install` prints a `404 @adsq/jsnq` line for the unpublished peer
-in some setups; that is expected and not a failure — check the exit status of the suites.
+All four must pass. Notes:
+
+- The reactive contract suites run with `bun --conditions browser`. Without the `browser` export
+  condition Solid resolves its server build, which does not re-run effects, so reactive
+  assertions would silently never fire.
+- `test:browser` needs Playwright's browsers once: `bun run install:browsers`. The demo
+  dev server listens on port 5174.
+- Benchmarks (`bun run bench:store`, `bun run bench:native`) are noisy on a shared machine;
+  only publish numbers you measured yourself, with the machine and command.
+
+## Documentation
+
+`README.md`, `SKILL.md` and `examples/browser-demo/README.md` describe the public API as
+exported from `src/index.ts`, `src/jsnq.ts` and `src/devtools.ts`. Keep their code samples
+compiling: on a typed store, direct assignment (`store.user.name = 'Ada'`) is a type error,
+so samples assign through `api.setValue` or a cast write view instead. When a public
+signature changes, update the docs and the API reference table in the same change.
