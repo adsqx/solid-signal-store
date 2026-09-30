@@ -3,12 +3,10 @@
 import { createSignal, type Accessor, type Setter } from 'solid-js';
 import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
 import { enumerateAncestors, normalizePath } from '../internal/path';
-import { BoundedCache } from '../internal/bounded-cache';
-import { isBranch } from '../internal/guards';
-import { WAKE_MODE_BRANCH, type SolidWakeMode } from '../internal/wake-modes';
-import type { SolidProxyMetrics, SolidStoreReactivity } from '../core/proxy-types';
+import { BoundedCache, isBranch } from '../internal/util';
+import type { SolidProxyMetrics, SolidStoreReactivity } from '../core/types';
 import { SignalTrie } from './signal-trie';
-import type { StoreMutator } from './types';
+import { WAKE_MODE_BRANCH, type SolidWakeMode, type StoreMutator } from './types';
 
 type SignalPair = [Accessor<unknown>, Setter<unknown>];
 
@@ -27,9 +25,8 @@ function touchedPaths(result: JsonMutationResult, into: Set<string>): Set<string
 export class WakeEngine implements SolidStoreReactivity {
   private signals = new Map<string, SignalPair>();
   private index = new SignalTrie();
-  // opinia5: per-query branch subscriptions ($liveQuery / $subscribe). A path here means
-  // "wake this branch signal whenever any descendant changes" — local branch tracking that
-  // does NOT require flipping the whole store into container/wakeParents mode.
+  // Per-query branch subscriptions ($liveQuery / $subscribe): a path here means "wake this branch signal
+  // whenever a descendant changes", without flipping the whole store into container mode.
   private branchSubs = new Map<string, number>();
   private ancestorCache = new BoundedCache<string, string[]>(1000);
 
@@ -84,9 +81,9 @@ export class WakeEngine implements SolidStoreReactivity {
   }
 
   /**
-   * Precise splice wake (opt-in via SolidStore preciseMutationWake): the array signal + only the
-   * element signals at index >= start (the untouched [0,start) prefix keeps value and index) +
-   * branch subscribers. Container mode keeps the full descendant sync so the ancestor wake stays identical.
+   * Precise splice wake (preciseMutationWake): the array signal, the element signals at index >= start
+   * (the untouched [0,start) prefix keeps value and index) and branch subscribers. Container mode keeps
+   * the full descendant sync so the ancestor wake stays identical.
    */
   wakeArraySplice(arrayPath: string, startIndex: number): void {
     this.updateAll(this.wakesParents
@@ -140,7 +137,7 @@ export class WakeEngine implements SolidStoreReactivity {
     if (this.branchSubs.size > 0) this.wakeBranchSubscribers(exact);
   }
 
-  // opinia5: register/unregister a branch as "interested in all descendants" (per-query, ref-counted).
+  // Ref-counted "interested in all descendants" registration of a branch.
   addBranchSub(path: string): void {
     const key = normalizePath(path);
     this.branchSubs.set(key, (this.branchSubs.get(key) ?? 0) + 1);
@@ -153,8 +150,8 @@ export class WakeEngine implements SolidStoreReactivity {
     else this.branchSubs.set(key, next);
   }
 
-  // Wakes each registered branch signal that is an ancestor-or-self of a changed path — only the
-  // branch signal itself, so its $liveQuery memo recomputes once. O(changed paths x depth).
+  // Wakes each registered branch signal that is an ancestor-or-self of a changed path (only the branch
+  // signal itself, so its $liveQuery memo recomputes once). O(changed paths x depth).
   private wakeBranchSubscribers(changedPaths: Iterable<string>): void {
     const woken = new Set<string>();
     this.wakeIfSubscribed('', woken);
@@ -172,7 +169,7 @@ export class WakeEngine implements SolidStoreReactivity {
     }
   }
 
-  /** Snapshot of proxy-graph sizes for devtools PROXY_METRICS emission (Angular parity). */
+  /** Proxy-graph sizes for devtools PROXY_METRICS. */
   getProxyMetrics(): SolidProxyMetrics {
     return { signals: this.signals.size, proxies: this.registry.size, branchSubs: this.branchSubs.size };
   }

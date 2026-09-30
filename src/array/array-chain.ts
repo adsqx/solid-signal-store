@@ -1,6 +1,5 @@
-// array-chain.ts — fluent ArrayChain over a narrow ArrayMutator (read + commit + batch)
-// injected by the orchestrator (SolidStore). Queries use native methods on the snapshot;
-// mutations always copy-on-write, batch and commit. Predicate-or-value sugar lives here only.
+// Fluent ArrayChain over a narrow ArrayMutator (read + commit + batch). Queries use native methods on the
+// snapshot; mutations copy-on-write, batch and commit. Predicate-or-value sugar lives here only.
 
 export interface ArrayMutator {
   read(path: string): unknown;
@@ -38,7 +37,7 @@ export class ArrayChain<T = unknown> {
 
   private arr(): T[] { return readArr<T>(this.m, this.p); }
 
-  // === Mutations (chainable; native return values swallowed for fluency) ===
+  // Mutations (chainable; native return values are swallowed)
   push(...v: T[]): this { return v.length ? this.run(a => a.push(...v)) : this; }
   unshift(...v: T[]): this { return v.length ? this.run(a => a.unshift(...v)) : this; }
   pop(): this { return this.run(a => a.pop()); }
@@ -65,7 +64,7 @@ export class ArrayChain<T = unknown> {
     return this.run(a => { if (i >= 0 && i < a.length) a.splice(i, 1); });
   }
 
-  // === Queries (immediate; sugar for predicate|value on find*/delete*/updateByFind/some/every) ===
+  // Queries (immediate)
   find(pred: T | Predicate<T>): T | undefined { return this.arr().find(asPredicate(pred)); }
   findIndex(pred: T | Predicate<T>): number { return this.arr().findIndex(asPredicate(pred)); }
   /** Chain scoped to the matching items: its `update(i, v)` / `delete()` act on matches only. */
@@ -100,11 +99,7 @@ class FilteredArrayChain<T> extends ArrayChain<T> {
 
   /** Removes every matching item. */
   override delete(): this {
-    const matches = this.matches;
-    mutate<T, void>(this.m, this.p, (a) => {
-      for (let i = a.length - 1; i >= 0; i--) if (matches(a[i]!, i, a)) a.splice(i, 1);
-    });
-    return this;
+    return super.delete(this.matches as Predicate<T>);
   }
 }
 

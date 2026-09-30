@@ -1,19 +1,35 @@
 /**
- * Proves which path-core helpers may be delegated to @adsq/jsnq/data-engine here.
+ * Proves which path helpers may be delegated to @adsq/jsnq/data-engine here.
  *
  * Outcome recorded by this suite:
- *  - setByPathCore(obj, path, value)  ==  writeJsonPathValue(obj, path, value)   -> delegated
- *  - getBySegmentsCore(..., { guardForbidden: true })  ==  getJsonBySegments on forbidden
- *    segments with the installed @adsq/jsnq (>= 0.1.4 guards and returns undefined). It stays
- *    local anyway: the peer range is ^0.1.0 and older jsnq releases performed no guard,
- *    so delegating would need a peer-floor bump. This suite asserts core still guards and
- *    that the installed jsnq agrees.
+ *  - the reference setter below (the former local implementation)  ==  writeJsonPathValue   -> delegated
+ *  - getBySegments guards forbidden segments locally and the installed @adsq/jsnq (>= 0.1.4)
+ *    agrees. It stays local anyway: the peer range is ^0.1.0 and older jsnq releases performed
+ *    no guard, so delegating would need a peer-floor bump.
  *
  * Run: bun --conditions browser test/path-core-jsnq-parity.test.ts
  */
-import { setByPathCore, getBySegmentsCore } from '../src/internal/path-core';
 import { writeJsonPathValue, getJsonBySegments } from '@adsq/jsnq/core/data-engine';
 import { getBySegments, setByPath } from '../src/internal/path';
+
+/** Reference implementation of the former local setter (kept here as the oracle for the jsnq delegation). */
+function setByPathCore(obj: unknown, path: string, value: unknown, _options?: unknown): void {
+  const FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor']);
+  const segments = path.split('.').filter(Boolean);
+  if (segments.some((s) => FORBIDDEN.has(s))) throw new Error(`Unsafe path segment in '${path}'`);
+  const traversable = (v: unknown) => v != null && (typeof v === 'object' || typeof v === 'function');
+  let current = obj as Record<string, any>;
+  for (let i = 0; i < segments.length - 1; i++) {
+    const segment = segments[i]!;
+    const wantsArray = /^\d+$/.test(segments[i + 1]!);
+    if (!traversable(current[segment])) current[segment] = wantsArray ? [] : {};
+    else if (wantsArray && !Array.isArray(current[segment])) current[segment] = [];
+    current = current[segment];
+  }
+  const last = segments[segments.length - 1]!;
+  if (Array.isArray(current) && /^\d+$/.test(last)) current[Number(last)] = value;
+  else current[last] = value;
+}
 
 let failures = 0;
 const ok = (condition: unknown, message: string): void => {
@@ -51,12 +67,11 @@ for (const path of ['a.__proto__.x', 'constructor']) {
 {
   const target = fixture();
   const forbidden = ['__proto__'];
-  ok(getBySegmentsCore(target, forbidden, { guardForbidden: true }) === undefined, 'core guards forbidden segments');
   ok(
     getJsonBySegments(target, forbidden) === undefined,
-    'installed jsnq guards forbidden segments too, matching core',
+    'installed jsnq guards forbidden segments too, matching the local guard',
   );
-  ok(getBySegments(target, forbidden) === undefined, 'public getBySegments still refuses forbidden segments');
+  ok(getBySegments(target, forbidden) === undefined, 'getBySegments refuses forbidden segments locally');
 }
 
 // --- public wrappers still behave ---------------------------------------------------

@@ -1,7 +1,7 @@
-// array-ops.ts — shared array method classification + the pure mutation dispatch table.
-// Single source for SolidStore.arrayOp, the proxy's array-method routing and the fluent chain.
-import { isBranch } from '../internal/guards';
-import type { SolidStoreReactivity } from '../core/proxy-types';
+// Array method classification, the pure mutation table and the store-level dispatch
+// (SolidStore.arrayOp / SolidStore.query); the proxy's method routing reads the same sets.
+import { isBranch } from '../internal/util';
+import type { SolidStoreReactivity } from '../core/types';
 
 export const ARRAY_QUERY_METHODS = new Set([
   'filter', 'map', 'find', 'findIndex', 'some', 'every', 'includes', 'indexOf', 'length'
@@ -16,7 +16,7 @@ export const ARRAY_METHODS = new Set([
 
 type MutationHandler = (arr: unknown[], args: readonly unknown[]) => unknown;
 
-// Each entry is a tiny named handler; the caller owns copy-on-write, batching and commit.
+// The caller owns copy-on-write, batching and commit.
 const ARRAY_MUTATION_HANDLERS: Record<string, MutationHandler> = {
   push:    (a, args) => args.length === 1 ? a.push(args[0]) : a.push(...args),
   pop:     (a) => a.pop(),
@@ -38,8 +38,6 @@ export function applyArrayMutation(arr: unknown[], method: string, args: readonl
   const fn = (arr as unknown as Record<string, unknown>)[method];
   return typeof fn === 'function' ? fn.apply(arr, args) : undefined;
 }
-
-// --- Store-level array dispatch (SolidStore.arrayOp / SolidStore.query) ---
 
 /** What the array dispatch needs from the store that owns it (`commit` + `batch` also feed the fluent chain). */
 export interface ArrayOpHost {
@@ -64,9 +62,9 @@ export function runArrayQuery(arr: readonly unknown[], method: string, args: rea
 
 const NOT_HANDLED: unique symbol = Symbol('array-op-not-handled');
 
-// Precise tail-only mutations: push/pop never reindex existing elements, so only the array signal
-// and the inserted/removed tail index wake — not every observed element (which the conservative
-// branch-replace path would). The proxy already emitted ARRAY_DISPATCH; nothing is emitted here.
+// Precise tail mutations: push/pop never reindex existing elements, so only the array signal and the
+// inserted/removed tail index wake (not every observed element, as the branch-replace path would).
+// The proxy already emitted ARRAY_DISPATCH.
 type FastOp = (host: ArrayOpHost, path: string, cur: unknown[], args: readonly unknown[]) => unknown;
 
 const FAST_OPS = new Map<string, FastOp>([
@@ -88,7 +86,7 @@ const FAST_OPS = new Map<string, FastOp>([
     return popped;
   }],
   // Precise splice (opt-in): copy-on-write data write, then wake only signals at index >= start.
-  // shift/unshift/reverse/sort touch index 0 (no prefix to skip) and keep the proven branch path.
+  // shift/unshift/reverse/sort touch index 0 (no prefix to skip) and keep the branch path.
   ['splice', (host, path, cur, args) => {
     if (!host.preciseSplice || host.wakeParents) return NOT_HANDLED;
     const rawStart = Number(args[0] ?? 0);

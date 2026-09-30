@@ -2,7 +2,7 @@
  * SolidStore.ts — the store orchestrator (CreateStore + SignalStore parity).
  * Owns the raw data, the root commit and the dev lifecycle, and wires createSolidProxy over the
  * narrow StoreMutator contract. jsnq operations live in store-jsnq.ts, array dispatch in
- * array/array-ops.ts, the named registry in registry.ts and the global dev bus in dev-bus.ts.
+ * array/array-ops.ts, the named registry in registry.ts and the dev bus in dev-service.ts.
  */
 import { batch, createMemo, type Accessor } from 'solid-js';
 import {
@@ -13,35 +13,32 @@ import {
   writeJsonPathValue,
   type JsonMutationResult,
 } from '@adsq/jsnq/data-engine';
-import { createSolidProxy, type SolidProxyOptions, type SolidWakeMode, type StoreMutator } from '../proxy/solid-proxy';
-import { arrayOp, queryArray, createArrayChain, type ArrayOpHost } from '../array/solid-array';
-import { deleteResult } from '../internal/mutation-results';
-import { WAKE_MODE_BRANCH, isWakeMode } from '../internal/wake-modes';
-import { publishDev } from './dev-bus';
+import { createSolidProxy } from '../proxy/solid-proxy';
+import { WAKE_MODE_BRANCH, isWakeMode, type SolidProxyOptions, type SolidWakeMode, type StoreMutator } from '../proxy/types';
+import { arrayOp, queryArray, type ArrayOpHost } from '../array/array-ops';
+import { createArrayChain } from '../array/array-chain';
+import { deleteResult } from '../internal/util';
 import {
   EMPTY_DEV_STREAM,
+  publishDev,
   type DevStream,
   type SolidDevtoolsAdapter,
   type StoreDevToolsAction,
-} from './devtools-contract';
-import type { SolidStoreProxy, SolidStoreReactivity } from './proxy-types';
+} from './dev-service';
+import type { SolidLiveQuery, SolidStoreOptions, SolidStoreProxy, SolidStoreReactivity } from './types';
 import { destroyRegistered, registerStore, unregisterStore } from './registry';
 import { createProjectionObservable, type ProjectionObservableOptions } from './rx-interop';
-import type { SolidLiveQuery, SolidStoreOptions } from './store-options';
-import { commitRoot } from './store-commit';
-import { createLiveQuery, mutate, pipe, runQuery, type JsnqHost } from './store-jsnq';
+import { commitRoot, createLiveQuery, mutate, pipe, runQuery, type JsnqHost } from './store-jsnq';
 
 export class SolidStore<T extends Record<string, unknown> = Record<string, unknown>> {
   readonly store: SolidStoreProxy<T>; // the callable proxied reactive root (full surface via traps)
   private readonly data: T;
   private name: string;
-  private readonly registryName: string;
+  readonly #registryName: string; // the name it was registered under, even after enableDevTools renames it
   private devActive = false;
   private readonly opts: SolidStoreOptions;
-  // Typed reactivity surface installed by createSolidProxy.
-  private reactivity?: SolidStoreReactivity;
-  // Typed wake-parents flag (read by the proxy manager's shouldWakeParents getter).
-  _wakeParentsOnChange = false;
+  private reactivity?: SolidStoreReactivity; // installed by createSolidProxy via bindReactivity
+  _wakeParentsOnChange = false; // read live by the wake engine, so wakeUp(mode) can switch at runtime
   private devService?: SolidDevtoolsAdapter;
   private destroyed = false;
   // One host object shared with the jsnq / array modules (built once, no per-call closures).
@@ -52,12 +49,11 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
   /** Read/history stream (excludes PROXY_METRICS, parity with Angular readAction$). */
   get devReadAction$(): DevStream { return this.devService?.readAction$ ?? EMPTY_DEV_STREAM; }
 
-  /** Typed binding called by createSolidProxy so the store can wake proxy-owned signals. */
+  /** Called by createSolidProxy so the store can wake proxy-owned signals. */
   bindReactivity(api: SolidStoreReactivity): void { this.reactivity = api; }
 
   constructor(initial: T, name = 'default', opts: SolidStoreOptions = {}) {
-    this.name = name;
-    this.registryName = name;
+    this.name = this.#registryName = name;
     this.opts = opts;
     this.devService = opts.devtools;
     this.data = cloneJsonData(initial ?? ({} as T));
@@ -91,8 +87,7 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
     registerStore(name, this);
   }
 
-  // Direct raw-data write + explicit signal wake + devtools emit (mirrors what the proxy set trap
-  // does). Root (empty path) is handled by #commitRoot / ignored here.
+  // Raw-data write + signal wake + devtools emit (what the proxy set trap does). Ignores the root path.
   #assign(p: string, v: unknown): void {
     if (!p) return;
     this.reactivity?.wakeMutation(writeJsonPath(this.data, p, v));
@@ -104,14 +99,14 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
     else commitRoot(this.#host, v);
   }
 
-  // StoreMutator contract (wired to the proxy) + the public surface the proxy traps call
+  // StoreMutator contract (wired to the proxy) + the public surface the proxy traps call.
   read(path: string): unknown { return readJsonPath(this.data, path ?? ''); }
   write(path: string, value: unknown): JsonMutationResult { return writeJsonPath(this.data, path ?? '', value); }
   batch<T>(fn: () => T): T { return batch(fn); }
   delete(path: string): JsonMutationResult {
     return path ? deleteJsonPath(this.data, path) : deleteResult('', this.data, true, true);
   }
-  prefetch(pathPrefix: string): void { this.read(pathPrefix); /* warms for cursor/prefetch contract */ }
+  prefetch(pathPrefix: string): void { this.read(pathPrefix); }
   emitDevAction(action: StoreDevToolsAction): void {
     if (this.devActive) publishDev(this.devService, this.name, action);
   }
@@ -151,14 +146,12 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
     return createLiveQuery<unknown>(this.#host, path ?? '', ops, 'first');
   }
 
-  // Fluent array entry — wiring to the dedicated array layer.
   array(path: string, ...args: any[]): any { return createArrayChain(path || (args[0] ?? ''), this.#host); }
 
   select<TOut>(project: (state: SolidStoreProxy<T>) => TOut, options?: ProjectionObservableOptions<TOut>) {
     return createProjectionObservable(this.computedOf(project), options);
   }
   computedOf<TOut>(project: (state: SolidStoreProxy<T>) => TOut): Accessor<TOut> {
-    // Automatic fine-grained tracking: project runs against callable proxy.
     return createMemo(() => project(this.store));
   }
 
@@ -179,7 +172,7 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
     if (this.destroyed) return;
     this.destroyed = true;
     batch(() => Object.keys(this.data ?? {}).forEach((k) => this.cleanupPath(k)));
-    unregisterStore(this.registryName, this);
+    unregisterStore(this.#registryName, this);
     this.emitDevAction({ type: 'STORE_DESTROYED', payload: { storeName: this.name } });
     this.devActive = false;
     this.reactivity?.destroy();
@@ -188,11 +181,7 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
     this.devService = undefined;
   }
 
-  /**
-   * Emit a PROXY_METRICS snapshot (signals / proxies / branchSubs sizes). Parity with
-   * Angular's emitProxyMetrics. Only fires when devtools is active. Throttling is the
-   * caller's responsibility (matching Angular's metricsThrottleMs).
-   */
+  /** Emits a PROXY_METRICS snapshot (parity with Angular's emitProxyMetrics) when devtools are active; throttling is the caller's. */
   emitProxyMetrics(): void {
     if (!this.devActive) return;
     const metrics = this.reactivity?.getProxyMetrics?.();
@@ -201,7 +190,6 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
 
   returnStore(): SolidStoreProxy<T> { return this.store; }
 
-  // Internal helpers exposed for bridge/advanced (parity with original createService surface)
   get _internalData() { return this.data; }
 
   /** Wake granularity: wakeUp('grained') dirties only the exact path (default), wakeUp('container') also its parents, wakeUp('a.b.c', 'leaf') wakes one branch. */
@@ -228,13 +216,3 @@ export function createSolidStore<T extends Record<string, unknown>>(
   destroyRegistered(name);
   return new SolidStore<T>(initial, name, options);
 }
-
-export default SolidStore;
-
-// Re-exports for wiring / testing and for the public entry points
-export { useSolidStore, waitForStore, type WaitForStoreOptions } from './registry';
-export { onSolidDevAction } from './dev-bus';
-export type { SolidLiveQuery, SolidStoreOptions } from './store-options';
-export type { StoreMutator, SolidProxyOptions, SolidWakeMode } from '../proxy/solid-proxy';
-export { createSolidProxy } from '../proxy/solid-proxy';
-export type { SolidStoreProxy, StoreArray, StoreLeaf } from './proxy-types';

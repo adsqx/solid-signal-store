@@ -1,9 +1,4 @@
-/**
- * PathUtils: the retained static-style facade over src/internal/path.ts, the single
- * source of truth for path parsing. Core files import internal/path directly; this
- * frozen namespace only keeps the `PathUtils.x(...)` surface stable.
- */
-
+/** Frozen `PathUtils.x(...)` facade over internal/path.ts, the single source of truth for path parsing. */
 import {
   enumerateAncestors,
   getByPath,

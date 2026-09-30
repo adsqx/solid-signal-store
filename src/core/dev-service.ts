@@ -1,17 +1,41 @@
 /**
- * SolidDevService — per-store devtools stream layer, parity with Angular's DevService.
- *
- * Angular's DevService exposes `action$` / `readAction$` BehaviorSubject streams plus
- * proxy-cache metrics helpers. Solid does not use RxJS, so these streams are minimal
- * listener-set subjects (subscribe(cb) → unsubscribe, plus a last-value cache mirroring
- * BehaviorSubject's "current value" contract). The legacy global `onSolidDevAction` bus
- * (SolidStore.ts) is kept for back-compat; this service is the typed per-instance layer
- * that the Angular host already had and Solid was missing.
+ * Devtools event layer: the event/adapter contracts, the per-store streams (SolidDevService, parity with
+ * Angular's DevService) and the legacy global bus behind `onSolidDevAction`. The streams are minimal
+ * listener-set subjects that replay the last value on subscribe (BehaviorSubject's "current value").
  */
 
-import type { DevStream, DevToolsEvent, ProxyMetrics, SolidDevtoolsAdapter } from './devtools-contract';
+export type StoreDevToolsAction = {
+  type: string;
+  payload?: Record<string, unknown>;
+  storeName?: string;
+};
 
-export type { DevStream, DevToolsEvent, ProxyMetrics, SolidDevtoolsAdapter } from './devtools-contract';
+export type DevToolsEvent = StoreDevToolsAction;
+
+export interface ProxyMetrics {
+  signals: number;
+  proxies: number;
+  branchSubs: number;
+}
+
+export interface DevStream<T = DevToolsEvent> {
+  subscribe(cb: (value: T) => void): { unsubscribe(): void };
+  get(): T | null;
+}
+
+export interface SolidDevtoolsAdapter {
+  readonly action$: DevStream;
+  readonly readAction$: DevStream;
+  emitAction(event: DevToolsEvent): void;
+  emitRead(event: DevToolsEvent): void;
+  emitProxyMetrics(storeName: string, metrics: ProxyMetrics): void;
+  destroy(): void;
+}
+
+export const EMPTY_DEV_STREAM: DevStream = Object.freeze({
+  subscribe: () => ({ unsubscribe() {} }),
+  get: () => null,
+});
 
 class ListenerStream<T = DevToolsEvent> implements DevStream<T> {
   private listeners = new Set<(value: T) => void>();
@@ -47,27 +71,16 @@ export class SolidDevService implements SolidDevtoolsAdapter {
   readonly action$: DevStream = this.actions;
   readonly readAction$: DevStream = this.reads;
 
-  emitAction(event: DevToolsEvent): void {
-    this.actions.emit(event);
-  }
+  emitAction(event: DevToolsEvent): void { this.actions.emit(event); }
 
-  emitRead(event: DevToolsEvent): void {
-    this.reads.emit(event);
-  }
+  emitRead(event: DevToolsEvent): void { this.reads.emit(event); }
 
-  /** Emit a PROXY_METRICS action (parity with Angular DevService.logProxyMetrics). */
+  /** Emit a PROXY_METRICS action (parity with Angular DevService.logProxyMetrics) on the action stream only. */
   emitProxyMetrics(storeName: string, metrics: ProxyMetrics): void {
-    // Metrics go to the action stream only (not read history), matching Angular.
+    const { signals, proxies, branchSubs } = metrics;
     this.emitAction({
       type: 'PROXY_METRICS',
-      payload: {
-        path: 'proxy-cache',
-        signals: metrics.signals,
-        proxies: metrics.proxies,
-        branchSubs: metrics.branchSubs,
-        cacheSize: metrics.proxies,
-        cacheKeys: [],
-      },
+      payload: { path: 'proxy-cache', signals, proxies, branchSubs, cacheSize: proxies, cacheKeys: [] },
       storeName,
     });
   }
@@ -80,4 +93,28 @@ export class SolidDevService implements SolidDevtoolsAdapter {
 
 export function createSolidDevtools(): SolidDevService {
   return new SolidDevService();
+}
+
+/** Event delivered on the legacy global dev bus (`storeName` is added by the emitting store). */
+export type DevBusEvent = StoreDevToolsAction & { storeName?: string };
+export type DevListener = (e: DevBusEvent) => void;
+
+const listeners = new Set<DevListener>();
+
+export function onSolidDevAction(fn: DevListener): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+/** Fans one store event out to its per-store streams (if any) and, asynchronously, the global bus. */
+export function publishDev(service: SolidDevtoolsAdapter | undefined, storeName: string, action: StoreDevToolsAction): void {
+  const event = { ...action, storeName };
+  service?.emitAction(event);
+  if (action.type !== 'PROXY_METRICS') service?.emitRead(event);
+  queueMicrotask(() => {
+    // A throwing listener never affects the others or the store.
+    for (const fn of listeners) {
+      try { fn(event); } catch { /* isolated */ }
+    }
+  });
 }

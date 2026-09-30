@@ -11,24 +11,16 @@ export interface WaitForStoreOptions {
   signal?: AbortSignal;
 }
 
-interface StoreWaiter {
-  resolve(store: RegisteredStore): void;
-  cleanup(): void;
-}
-
 const stores = new Map<string, RegisteredStore>();
-const waiters = new Map<string, Set<StoreWaiter>>();
+// Pending waitForStore callers per name; each callback releases its own timer/abort listener.
+const waiters = new Map<string, Set<(store: RegisteredStore) => void>>();
 
 /** Registers `store` under `name` and resolves any `waitForStore(name)` calls already pending. */
 export function registerStore(name: string, store: RegisteredStore): void {
   stores.set(name, store);
   const pending = waiters.get(name);
-  if (!pending) return;
   waiters.delete(name);
-  for (const waiter of pending) {
-    waiter.cleanup();
-    waiter.resolve(store);
-  }
+  pending?.forEach((notify) => notify(store));
 }
 
 /** Removes `name` only if it still points at `store` (a newer store may have replaced it). */
@@ -60,24 +52,25 @@ export function waitForStore<T extends Record<string, unknown> = any>(
 
   return new Promise<SolidStore<T>>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const set = waiters.get(name) ?? new Set<StoreWaiter>();
-    const waiter: StoreWaiter = {
-      resolve: (store) => resolve(store as SolidStore<T>),
-      cleanup: () => {
-        if (timer !== undefined) clearTimeout(timer);
-        signal?.removeEventListener('abort', onAbort);
-      },
+    const pending = waiters.get(name) ?? new Set();
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const notify = (store: RegisteredStore) => {
+      cleanup();
+      resolve(store as SolidStore<T>);
     };
     const fail = (error: Error) => {
-      set.delete(waiter);
-      if (set.size === 0) waiters.delete(name);
-      waiter.cleanup();
+      pending.delete(notify);
+      if (pending.size === 0) waiters.delete(name);
+      cleanup();
       reject(error);
     };
     const onAbort = () => fail(abortError());
 
-    set.add(waiter);
-    waiters.set(name, set);
+    pending.add(notify);
+    waiters.set(name, pending);
     signal?.addEventListener('abort', onAbort, { once: true });
     if (timeoutMs !== undefined) {
       const ms = Math.max(0, timeoutMs);
