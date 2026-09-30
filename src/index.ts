@@ -7,7 +7,7 @@
 
 // Core
 export { SolidStore, createSolidStore, useSolidStore, waitForStore, onSolidDevAction } from './core/SolidStore';
-export type { WaitForStoreOptions } from './core/SolidStore';
+export type { SolidStoreOptions, WaitForStoreOptions } from './core/SolidStore';
 
 // Proxy (for advanced wiring / testing)
 export { createSolidProxy } from './proxy/solid-proxy';
@@ -17,7 +17,6 @@ export type { StoreMutator, SolidProxyOptions, SolidWakeMode } from './proxy/sol
 export { createProjectionObservable } from './core/rx-interop';
 
 // Re-export key types for convenience
-export type { SolidStoreOptions } from './core/SolidStore';
 export type { SolidStoreProxy, StoreArray, StoreLeaf, SolidStoreReactivity, SolidProxyMetrics } from './core/proxy-types';
 export type {
   DevStream,

@@ -161,7 +161,7 @@ runBenchmark();
    Measures append + occasional snapshot for realistic log-like usage.
    ========================================================================== */
 
-import { RingBuffer } from '../src/utils/ring-buffer';
+import { RingBuffer } from './support/ring-buffer';
 
 function microbenchRingVsArray(iterations = 100_000, snapshotEvery = 1000) {
   console.log('\n=== RingBuffer vs native Array micro-benchmark ===');

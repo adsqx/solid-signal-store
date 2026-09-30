@@ -1,14 +1,12 @@
 import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
-import type { SolidWakeMode } from '../proxy/solid-proxy';
+import type { SolidWakeMode } from '../internal/wake-modes';
+import type { ProxyMetrics } from './devtools-contract';
+import type { ProjectionObservableOptions } from './rx-interop';
 
 export type StorePrimitive = string | number | boolean | bigint | symbol | null | undefined;
 
 /** Proxy-graph sizes for devtools metrics (parity with Angular ProxyCacheManager.metricsSnapshot). */
-export interface SolidProxyMetrics {
-  signals: number;
-  proxies: number;
-  branchSubs: number;
-}
+export type SolidProxyMetrics = ProxyMetrics;
 
 /**
  * Typed reactivity surface that the proxy manager installs on the store so the store
@@ -32,11 +30,7 @@ export interface SolidStoreReactivity {
 // opinia5: shared shapes for the $-namespace (subscriptions + reactive jsnq reads).
 export type StoreSubscription = { unsubscribe(): void; dispose(): void };
 
-export type StoreSubscribeOptions<T> = {
-  equals?: (a: T, b: T) => boolean;
-  immediate?: boolean;
-  onError?: (error: unknown) => void;
-};
+export type StoreSubscribeOptions<T> = ProjectionObservableOptions<T>;
 
 export type StoreLiveQuery<T> = (() => T) & {
   subscribe(cb: (value: T) => void, options?: StoreSubscribeOptions<T>): StoreSubscription;

@@ -58,8 +58,48 @@ export interface DetailedMutationResult {
   mutations: string[] | null;
 }
 
+type BridgeErrorMode = NonNullable<SolidPipelineOptions['bridgeErrorMode']>;
+
+/** Loosely-typed view of a jsnq operator, for the root-replace shortcut only. */
+interface RootOpLike {
+  __isMutation?: boolean;
+  type?: string;
+  key?: unknown;
+  value?: unknown;
+}
+
+/** Shared catch handling: rethrow, or (optionally) log and hand back a safe clone — never throw into the reactive graph. */
+function recoverFromError(
+  mode: BridgeErrorMode,
+  log: (...args: unknown[]) => void,
+  message: string,
+  error: unknown,
+  value: unknown
+): unknown {
+  if (mode === 'throw') throw error;
+  if (mode !== 'silent') log(`[solid-pipeline-bridge] ${message}`, error);
+  return cloneJson(value);
+}
+
+type PipelineData = ConstructorParameters<typeof PipelineWrapper>[0];
+type PipelineArgs = Parameters<PipelineWrapper['pipeline']>;
+
+function buildWrapper(
+  currentValue: unknown,
+  ops: readonly unknown[],
+  autoClone: boolean,
+  options: SolidPipelineOptions
+): PipelineWrapper {
+  const wrapper = new PipelineWrapper(currentValue as PipelineData, {
+    autoClone,
+    trackOperations: options.trackOperations ?? false,
+  });
+  if (ops && ops.length > 0) wrapper.pipeline(...(ops as PipelineArgs));
+  return wrapper;
+}
+
 export function applyPipelineMutation(
-  ops: any[],
+  ops: readonly unknown[],
   currentValue: unknown,
   options: SolidPipelineOptions = {}
 ): unknown {
@@ -72,7 +112,7 @@ export function applyPipelineMutation(
 
     // Strong fast path for root-level replace (very common)
     if (isRoot && ops.length === 1) {
-      const op = ops[0];
+      const op = ops[0] as RootOpLike | null | undefined;
       if (op && typeof op === 'object' && !op.__isMutation) {
         return cloneJson(op);
       }
@@ -109,29 +149,17 @@ export function applyPipelineMutation(
     // Wrapped defensively to guarantee no crashes even on unexpected null/undefined
     // edge cases that reach here (sugar forms with non-string keys are pre-routed).
     try {
-      const wrapper = new PipelineWrapper(currentValue as any, {
-        autoClone: true,
-        trackOperations: options.trackOperations ?? false,
-      });
-      wrapper.pipeline(...(ops as any));
+      const wrapper = buildWrapper(currentValue, ops, true, options);
       wrapper.execute('all');
       return wrapper.data;
     } catch (execErr) {
-      if (errorMode === 'throw') throw execErr;
-      if (errorMode !== 'silent') {
-        console.warn('[solid-pipeline-bridge] Execution warning (standard path):', execErr);
-      }
-      // Return a structurally-safe clone on error (never original ref, never throw).
+      // Structurally-safe clone on error (never original ref, never throw).
       // Preserves nulls; undefined props may be dropped (json-like semantics).
-      return cloneJson(currentValue as any);
+      return recoverFromError(errorMode, console.warn, 'Execution warning (standard path):', execErr, currentValue);
     }
   } catch (e) {
-    if (errorMode === 'throw') throw e;
-    if (errorMode !== 'silent') {
-      console.error('[solid-pipeline-bridge] Pipeline execution failed:', e);
-    }
     // Top-level safety (warn/silent): never throw from the bridge.
-    return cloneJson(currentValue as any);
+    return recoverFromError(errorMode, console.error, 'Pipeline execution failed:', e, currentValue);
   }
 }
 
@@ -143,7 +171,7 @@ export function applyPipelineMutation(
  * path computation is the shared engine helper, identical to the Angular host.
  */
 export function applyPipelineMutationDetailed(
-  ops: any[],
+  ops: readonly unknown[],
   currentValue: unknown,
   options: SolidPipelineOptions = {}
 ): DetailedMutationResult {
@@ -154,16 +182,8 @@ export function applyPipelineMutationDetailed(
   return { value: applyPipelineMutation(ops, currentValue, options), mutations: null };
 }
 
-export function createPipeline(currentValue: unknown, ops: any[], options: SolidPipelineOptions = {}) {
-  const hasMutations = collectPipelineIntent(ops).actions.length > 0;
-  const wrapper = new PipelineWrapper(currentValue as any, {
-    autoClone: hasMutations,
-    trackOperations: options.trackOperations ?? false,
-  });
-  if (ops && ops.length > 0) {
-    wrapper.pipeline(...(ops as any));
-  }
-  return wrapper;
+export function createPipeline(currentValue: unknown, ops: readonly unknown[], options: SolidPipelineOptions = {}) {
+  return buildWrapper(currentValue, ops, collectPipelineIntent(ops).actions.length > 0, options);
 }
 
 export const solidJsnqBridge: SolidJsnqBridge = {
@@ -172,7 +192,13 @@ export const solidJsnqBridge: SolidJsnqBridge = {
   createPipeline,
 };
 
-export function registerSolidJsnqBridge(target: any = globalThis): SolidJsnqBridge {
+/** The globals the bridge publishes itself on (read back by SolidStore's auto-discovery). */
+export interface SolidBridgeHost {
+  __SOLID_PIPELINE_BRIDGE?: SolidJsnqBridge;
+  solidJsnqBridge?: SolidJsnqBridge;
+}
+
+export function registerSolidJsnqBridge(target: SolidBridgeHost = globalThis as SolidBridgeHost): SolidJsnqBridge {
   target.__SOLID_PIPELINE_BRIDGE = solidJsnqBridge;
   target.solidJsnqBridge = solidJsnqBridge;
   return solidJsnqBridge;

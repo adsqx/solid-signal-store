@@ -4,7 +4,7 @@ export type StoreDevToolsAction = {
   storeName?: string;
 };
 
-export type DevToolsEvent = StoreDevToolsAction & { storeName?: string };
+export type DevToolsEvent = StoreDevToolsAction;
 
 export interface ProxyMetrics {
   signals: number;

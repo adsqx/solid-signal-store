@@ -9,13 +9,7 @@
  * that the Angular host already had and Solid was missing.
  */
 
-import type {
-  DevStream,
-  DevToolsEvent,
-  ProxyMetrics,
-  SolidDevtoolsAdapter,
-  StoreDevToolsAction,
-} from './devtools-contract';
+import type { DevStream, DevToolsEvent, ProxyMetrics, SolidDevtoolsAdapter } from './devtools-contract';
 
 export type { DevStream, DevToolsEvent, ProxyMetrics, SolidDevtoolsAdapter } from './devtools-contract';
 
@@ -48,20 +42,23 @@ class ListenerStream<T = DevToolsEvent> implements DevStream<T> {
 }
 
 export class SolidDevService implements SolidDevtoolsAdapter {
-  readonly action$: DevStream = new ListenerStream();
-  readonly readAction$: DevStream = new ListenerStream();
+  private readonly actions = new ListenerStream();
+  private readonly reads = new ListenerStream();
+  readonly action$: DevStream = this.actions;
+  readonly readAction$: DevStream = this.reads;
 
   emitAction(event: DevToolsEvent): void {
-    (this.action$ as ListenerStream).emit(event);
+    this.actions.emit(event);
   }
 
   emitRead(event: DevToolsEvent): void {
-    (this.readAction$ as ListenerStream).emit(event);
+    this.reads.emit(event);
   }
 
   /** Emit a PROXY_METRICS action (parity with Angular DevService.logProxyMetrics). */
   emitProxyMetrics(storeName: string, metrics: ProxyMetrics): void {
-    const action: StoreDevToolsAction = {
+    // Metrics go to the action stream only (not read history), matching Angular.
+    this.emitAction({
       type: 'PROXY_METRICS',
       payload: {
         path: 'proxy-cache',
@@ -71,15 +68,13 @@ export class SolidDevService implements SolidDevtoolsAdapter {
         cacheSize: metrics.proxies,
         cacheKeys: [],
       },
-    };
-    const event: DevToolsEvent = { ...action, storeName };
-    // Metrics go to the action stream only (not read history), matching Angular.
-    this.emitAction(event);
+      storeName,
+    });
   }
 
   destroy(): void {
-    (this.action$ as ListenerStream).clear();
-    (this.readAction$ as ListenerStream).clear();
+    this.actions.clear();
+    this.reads.clear();
   }
 }
 
