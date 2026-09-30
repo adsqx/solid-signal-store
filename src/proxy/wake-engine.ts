@@ -64,22 +64,22 @@ export class WakeEngine implements SolidStoreReactivity {
     for (const path of paths) this.updateSignal(path);
   }
 
-  /** Root-first ancestor-or-self paths of `path` (cached). Empty for paths that are not valid normalized paths. */
-  branchTargets(path: string): string[] {
-    const normalized = normalizePath(path);
+  /** Root-first ancestor-or-self paths of a normalized path (cached). Empty for invalid paths. */
+  private targetsOf(normalized: string): string[] {
     return this.ancestorCache.get(normalized) ?? this.ancestorCache.set(normalized, enumerateAncestors(normalized).reverse());
   }
 
   /** Root-first strict ancestors of `path`. */
-  parentTargets(path: string): string[] {
-    const targets = this.branchTargets(path);
-    return targets.length > 0 && targets[targets.length - 1] === normalizePath(path) ? targets.slice(0, -1) : targets;
+  private parentTargets(path: string): string[] {
+    const normalized = normalizePath(path);
+    const targets = this.targetsOf(normalized);
+    return targets.length > 0 && targets[targets.length - 1] === normalized ? targets.slice(0, -1) : targets;
   }
 
   wakeSignalPath(path: string, mode: SolidWakeMode = 'grained'): void {
     const normalized = normalizePath(path);
     if (!normalized) return;
-    if (WAKE_MODE_BRANCH[mode]) this.updateAll(this.branchTargets(normalized));
+    if (WAKE_MODE_BRANCH[mode]) this.updateAll(this.targetsOf(normalized));
     else this.updateSignal(normalized);
   }
 
@@ -112,8 +112,13 @@ export class WakeEngine implements SolidStoreReactivity {
   wakeMutation(result: JsonMutationResult): void {
     if (result.branchReplaced) this.updateAll(this.index.descendantsOf(result.path));
     const { changed, inserted, deleted } = result;
-    if (changed.length === 1 && inserted.length === 0 && deleted.length === 0) this.updateSignal(changed[0]!);
-    else this.updateAll(touchedPaths(result, new Set()));
+    const count = changed.length + inserted.length + deleted.length;
+    // One touched path (a set also lists a new key as inserted) needs no dedupe set.
+    if (count === 1 || (count === 2 && changed.length === 1 && changed[0] === inserted[0])) {
+      this.updateSignal((changed[0] ?? inserted[0] ?? deleted[0])!);
+    } else if (count > 0) {
+      this.updateAll(touchedPaths(result, new Set()));
+    }
     if (this.wakesParents) this.updateAll(result.parents);
     if (this.branchSubs.size > 0) this.wakeBranchSubscribers([...changed, ...inserted, ...deleted, result.path]);
   }
@@ -151,19 +156,19 @@ export class WakeEngine implements SolidStoreReactivity {
   // Wakes each registered branch signal that is an ancestor-or-self of a changed path — only the
   // branch signal itself, so its $liveQuery memo recomputes once. O(changed paths x depth).
   private wakeBranchSubscribers(changedPaths: Iterable<string>): void {
-    const subs = this.branchSubs;
     const woken = new Set<string>();
-    const wake = (candidate: string): void => {
-      if (subs.has(candidate) && !woken.has(candidate)) {
-        woken.add(candidate);
-        this.updateSignal(candidate);
-      }
-    };
-    wake('');
+    this.wakeIfSubscribed('', woken);
     for (const path of changedPaths) {
       if (!path) continue;
-      wake(path);
-      for (const ancestor of this.branchTargets(path)) wake(ancestor);
+      this.wakeIfSubscribed(path, woken);
+      for (const ancestor of this.targetsOf(normalizePath(path))) this.wakeIfSubscribed(ancestor, woken);
+    }
+  }
+
+  private wakeIfSubscribed(candidate: string, woken: Set<string>): void {
+    if (this.branchSubs.has(candidate) && !woken.has(candidate)) {
+      woken.add(candidate);
+      this.updateSignal(candidate);
     }
   }
 

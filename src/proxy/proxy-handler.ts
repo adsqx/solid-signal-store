@@ -1,118 +1,98 @@
-// The Proxy traps of one node: reads resolve to special keys, dispatch methods or cached child proxies;
-// writes and deletes go through the store mutator and wake the touched signals.
+// The Proxy traps of one node. Reads try the child cache first, then the key tables, then build the
+// child proxy; writes and deletes go through the store mutator and wake the touched signals.
 
-import { isValidPath } from '../internal/path';
-import { ARRAY_METHODS } from '../array/solid-array';
+import { getParentPath, isValidPath } from '../internal/path';
 import { isBranch } from '../internal/guards';
-import type { ProjectionObservableOptions } from '../core/rx-interop';
-import type { ProxyContext } from './proxy-context';
-import {
-  createArrayMethodHandler, createDispatchHandler, createRootDispatchHandler,
-  isDispatchMethod, isRootDispatchMethod, subscribePath,
-} from './proxy-dispatch';
+import type { NodeMethod, ProxyContext } from './proxy-context';
+import { NODE_KEYS, ROOT_KEYS, type KeyTable, type ProxyNode } from './node-keys';
 
 const MAX_CHILD_CACHE_SIZE = 256;
 
 const childPath = (parent: string, key: string): string => (parent ? `${parent}.${key}` : key);
 
-function symbolProperty(k: symbol, get: () => unknown): unknown {
+function symbolProperty(k: symbol, read: () => unknown): unknown {
   if (k === Symbol.toPrimitive) {
     return (hint: string) => {
-      const v = get();
+      const v = read();
       return typeof v === 'object' ? (hint === 'number' ? NaN : JSON.stringify(v)) : v;
     };
   }
   if (k === Symbol.toStringTag) {
     return () => {
-      const v = get();
+      const v = read();
       try { return typeof v === 'object' ? JSON.stringify(v) : String(v); } catch { return String(v); }
     };
   }
   return undefined;
 }
 
-export function createProxyHandler(ctx: ProxyContext, path: string, get: () => unknown): ProxyHandler<object> {
-  const childCache: Record<string, object> = Object.create(null);
-  let childCacheSize = 0;
+export class NodeHandler implements ProxyHandler<object>, ProxyNode {
+  private readonly keys: KeyTable;
+  // Child proxy identity is stable for the store lifetime; this per-node cache avoids rebuilding the
+  // child path and consulting the global registry on every read. Special keys are never cached.
+  private children: Record<string, object> | null = null;
+  private childCount = 0;
+  private methods: Record<string, NodeMethod> | null = null;
+  private target: string | undefined;
 
-  return {
-    get(_: object, k: PropertyKey) {
-      if (typeof k === 'symbol') return symbolProperty(k, get);
-      const ks = String(k);
+  constructor(readonly ctx: ProxyContext, readonly path: string, readonly read: () => unknown) {
+    this.keys = path === '' ? ROOT_KEYS : NODE_KEYS;
+  }
 
-      switch (ks) {
-        case '$val':
-          return get();
-        case 'toString':
-          return () => String(get());
-        case 'valueOf':
-        case 'toJSON':
-        case '$signal':
-          return get;
-        case 'length': {
-          const value = get();
-          return Array.isArray(value) ? value.length : undefined;
-        }
-      }
+  get dispatchPath(): string {
+    // Dispatch is keyed off the parent of `<path>.mutate`: null (root or invalid path) means the root.
+    return (this.target ??= getParentPath(childPath(this.path, 'mutate')) ?? '');
+  }
 
-      // opinia5: $subscribe(cb, options) on any node — observe this path's value. Registers
-      // branch interest so a subscription on an object/array also fires on descendant changes,
-      // without flipping the whole store into container mode. Returns { unsubscribe, dispose }.
-      if (ks === '$subscribe') {
-        return (cb: (value: unknown) => void, options?: ProjectionObservableOptions<unknown>) =>
-          subscribePath(ctx, path, get, cb, options);
-      }
-      if (path === '' && isRootDispatchMethod(ks)) return createRootDispatchHandler(ctx, ks);
+  method(key: string, build: (node: ProxyNode, key: string) => NodeMethod): NodeMethod {
+    const methods = (this.methods ??= Object.create(null) as Record<string, NodeMethod>);
+    return (methods[key] ??= build(this, key));
+  }
 
-      // opinia5: $-prefixed aliases so a data key literally named `mutate`/`query`/`select`/… does
-      // not shadow the store operations. Back-compat: bare names stay.
-      if (isDispatchMethod(ks)) return createDispatchHandler(ctx, childPath(path, ks), ks);
-      if (ARRAY_METHODS.has(ks)) return createArrayMethodHandler(ctx, path, ks, get);
+  get(_: object, k: string | symbol): unknown {
+    if (typeof k === 'symbol') return symbolProperty(k, this.read);
+    const hit = this.children?.[k];
+    if (hit) return hit;
+    const resolve = this.keys[k];
+    return resolve ? resolve(this, k) : this.child(k);
+  }
 
-      // Child proxy identity is stable for the store lifetime. A per-parent cache
-      // avoids rebuilding the full path and consulting the global map on every read.
-      const cached = childCache[ks];
-      if (cached) return cached;
-      const child = ctx.factory(childPath(path, ks));
-      if (childCacheSize >= MAX_CHILD_CACHE_SIZE) {
-        for (const key in childCache) delete childCache[key];
-        childCacheSize = 0;
-      }
-      childCache[ks] = child;
-      childCacheSize++;
-      return child;
-    },
+  private child(key: string): object {
+    const child = this.ctx.factory(childPath(this.path, key));
+    if (this.children === null || this.childCount >= MAX_CHILD_CACHE_SIZE) {
+      this.children = Object.create(null) as Record<string, object>;
+      this.childCount = 0;
+    }
+    this.children[key] = child;
+    this.childCount++;
+    return child;
+  }
 
-    set(_: object, k: PropertyKey, v: unknown) {
-      return typeof k === 'symbol' ? false : setProperty(ctx, childPath(path, String(k)), v);
-    },
+  set(_: object, k: string | symbol, v: unknown): boolean {
+    if (typeof k === 'symbol') return false;
+    const { mutator, engine, opts } = this.ctx;
+    const tp = childPath(this.path, k);
+    if (v === undefined && opts.strictDeleteUndefined) throw new Error(`strict: set undefined ${tp}`);
+    if (opts.strictInvalidPath && !isValidPath(tp)) throw new Error(`strict: invalid path ${tp}`);
 
-    deleteProperty(_: object, k: PropertyKey) {
-      return typeof k === 'symbol' ? false : deleteProperty(ctx, childPath(path, String(k)));
-    },
-  };
-}
+    if (v === undefined) mutator.batch(() => engine.wakeMutation(mutator.delete(tp)));
+    // A lone primitive leaf dirties a single signal, so it needs no batch.
+    else if (!isBranch(v) && !mutator._wakeParentsOnChange) engine.wakeMutation(mutator.write(tp, v));
+    else mutator.batch(() => engine.wakeMutation(mutator.write(tp, v)));
 
-function setProperty(ctx: ProxyContext, tp: string, v: unknown): boolean {
-  const { mutator, engine, opts } = ctx;
-  if (v === undefined && opts.strictDeleteUndefined) throw new Error(`strict: set undefined ${tp}`);
-  if (opts.strictInvalidPath && !isValidPath(tp)) throw new Error(`strict: invalid path ${tp}`);
+    mutator.emitDevAction({ type: 'SET_VALUE', payload: { path: tp, value: v } });
+    return true;
+  }
 
-  const writeAndSync = () => engine.wakeMutation(v === undefined ? mutator.delete(tp) : mutator.write(tp, v));
-  // A lone primitive leaf needs no batch: it dirties a single signal.
-  if (v !== undefined && !isBranch(v) && !mutator._wakeParentsOnChange) writeAndSync();
-  else mutator.batch(writeAndSync);
+  deleteProperty(_: object, k: string | symbol): boolean {
+    if (typeof k === 'symbol') return false;
+    const { mutator, engine, opts } = this.ctx;
+    const tp = childPath(this.path, k);
+    if (opts.strictDeleteUndefined) throw new Error(`strict: delete ${tp}`);
+    if (opts.strictInvalidPath && !isValidPath(tp)) throw new Error(`strict: invalid path ${tp}`);
 
-  ctx.emit({ type: 'SET_VALUE', payload: { path: tp, value: v } });
-  return true;
-}
-
-function deleteProperty(ctx: ProxyContext, tp: string): boolean {
-  const { mutator, engine, opts } = ctx;
-  if (opts.strictDeleteUndefined) throw new Error(`strict: delete ${tp}`);
-  if (opts.strictInvalidPath && !isValidPath(tp)) throw new Error(`strict: invalid path ${tp}`);
-
-  mutator.batch(() => engine.wakeMutation(mutator.delete(tp)));
-  ctx.emit({ type: 'DELETE', payload: { path: tp } });
-  return true;
+    mutator.batch(() => engine.wakeMutation(mutator.delete(tp)));
+    mutator.emitDevAction({ type: 'DELETE', payload: { path: tp } });
+    return true;
+  }
 }

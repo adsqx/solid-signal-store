@@ -1,7 +1,8 @@
-import type { StoreDevToolsAction } from '../core/devtools-contract';
 import type { WakeEngine } from './wake-engine';
-import type { ProxyRegistry, NodeMethod } from './proxy-registry';
+import type { ProxyRegistry } from './proxy-registry';
 import type { SolidProxyOptions, StoreMutator } from './types';
+
+export type NodeMethod = (...args: unknown[]) => unknown;
 
 /** Store operations the proxy dispatches to by name; only what the store actually defines is present. */
 export type MutatorSurface = Record<string, NodeMethod | undefined>;
@@ -18,5 +19,4 @@ export interface ProxyContext {
   readonly engine: WakeEngine;
   readonly registry: ProxyRegistry;
   readonly factory: NodeFactory;
-  emit(action: StoreDevToolsAction): void;
 }
