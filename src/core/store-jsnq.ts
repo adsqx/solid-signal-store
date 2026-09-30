@@ -2,7 +2,7 @@
 // functions over a small host interface, so the SolidStore class only wires them up.
 import { createMemo } from 'solid-js';
 import { createJsonPathPlan } from '@adsq/jsnq/data-engine';
-import { isBranch } from '../internal/guards';
+import { isBranch } from '../internal/util';
 import { subscription, once } from '../internal/subscription';
 import type { SolidBridgeHost, SolidJsnqBridge } from '../jsnq/solid-pipeline-bridge';
 import { commitPrecise, type CommitHost } from './store-commit';

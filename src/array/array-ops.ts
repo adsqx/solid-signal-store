@@ -1,6 +1,6 @@
 // array-ops.ts — shared array method classification + the pure mutation dispatch table.
 // Single source for SolidStore.arrayOp, the proxy's array-method routing and the fluent chain.
-import { isBranch } from '../internal/guards';
+import { isBranch } from '../internal/util';
 import type { SolidStoreReactivity } from '../core/proxy-types';
 
 export const ARRAY_QUERY_METHODS = new Set([

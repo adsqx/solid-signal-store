@@ -3,8 +3,8 @@
 import { createSignal, type Accessor, type Setter } from 'solid-js';
 import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
 import { enumerateAncestors, normalizePath } from '../internal/path';
-import { BoundedCache } from '../internal/bounded-cache';
-import { isBranch } from '../internal/guards';
+import { BoundedCache } from '../internal/util';
+import { isBranch } from '../internal/util';
 import { WAKE_MODE_BRANCH, type SolidWakeMode } from '../internal/wake-modes';
 import type { SolidProxyMetrics, SolidStoreReactivity } from '../core/proxy-types';
 import { SignalTrie } from './signal-trie';

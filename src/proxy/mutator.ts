@@ -1,5 +1,5 @@
 import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
-import { deleteResult, setResult } from '../internal/mutation-results';
+import { deleteResult, setResult } from '../internal/util';
 import type { StoreMutator } from './types';
 
 /** Builds a full StoreMutator from a minimal read/write pair; every other member has a no-op default. */

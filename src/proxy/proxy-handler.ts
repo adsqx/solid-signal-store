@@ -2,7 +2,7 @@
 // child proxy; writes and deletes go through the store mutator and wake the touched signals.
 
 import { getParentPath, isValidPath } from '../internal/path';
-import { isBranch } from '../internal/guards';
+import { isBranch } from '../internal/util';
 import type { NodeMethod, ProxyContext } from './proxy-context';
 import { NODE_KEYS, ROOT_KEYS, type KeyTable, type ProxyNode } from './node-keys';
 

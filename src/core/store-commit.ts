@@ -1,7 +1,7 @@
 // store-commit.ts — the two multi-path commits: root replace (key-diff) and precise leaf wake.
 import { batch } from 'solid-js';
 import { writeJsonPathValue, type JsonMutationResult } from '@adsq/jsnq/data-engine';
-import { deleteResult, setResult, touchResult } from '../internal/mutation-results';
+import { deleteResult, setResult, touchResult } from '../internal/util';
 import type { StoreDevToolsAction } from './devtools-contract';
 
 /** What a commit needs from its store: the raw data, a dev emitter and the signal wake. */
