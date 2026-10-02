@@ -1,6 +1,6 @@
 // Array method classification, the pure mutation table and the store-level dispatch
 // (SolidStore.arrayOp / SolidStore.query); the proxy's method routing reads the same sets.
-import { isBranch } from '../internal/util';
+import { isBranch, ownValue } from '../internal/util';
 import type { SolidStoreReactivity } from '../core/types';
 
 export const ARRAY_QUERY_METHODS = new Set([
@@ -100,11 +100,19 @@ const FAST_OPS = new Map<string, FastOp>([
   }],
 ]);
 
+/** Copies the item arguments of push/unshift/splice, so the array never aliases the caller's objects. */
+export function ownItemArgs(method: string, args: readonly unknown[]): readonly unknown[] {
+  const from = method === 'push' || method === 'unshift' ? 0 : method === 'splice' ? 2 : -1;
+  if (from < 0 || !args.some((a, i) => i >= from && isBranch(a))) return args;
+  return args.map((a, i) => (i >= from ? ownValue(a) : a));
+}
+
 /** store.<path>.<method>(...args): queries run on the snapshot, mutations copy-on-write and commit. */
-export function arrayOp(host: ArrayOpHost, path: string, method: string, args: readonly unknown[], current?: unknown): unknown {
+export function arrayOp(host: ArrayOpHost, path: string, method: string, rawArgs: readonly unknown[], current?: unknown): unknown {
   const cur = Array.isArray(current) ? current : host.read(path);
   if (!Array.isArray(cur)) return undefined;
-  if (ARRAY_QUERY_METHODS.has(method)) return runArrayQuery(cur, method, args);
+  if (ARRAY_QUERY_METHODS.has(method)) return runArrayQuery(cur, method, rawArgs);
+  const args = ownItemArgs(method, rawArgs);
 
   const fastOp = FAST_OPS.get(method);
   if (fastOp) {

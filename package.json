@@ -42,7 +42,7 @@
     "build": "node scripts/clean-dist.mjs && tsc && node scripts/fix-dist-esm-extensions.mjs",
     "typecheck": "tsc --noEmit",
     "prepack": "npm run build && npm run verify:exports",
-    "test": "bun run test:types && bun run test:array-methods && bun run test:proxy-delete && bun run test:wakeup-batch && bun run test:select-observable && bun run test:devtools-stream && bun run test:wait-for-store && bun run test:lifecycle && bun run test:nested-tree-batch && bun run test:nestable-cms && bun run test:store-component-flow && bun run test:store-board-wakeup && bun run test:deep-proxy-jsnq && bun run test:livequery && bun run test:bridge-contract && bun run test:array-splice-precise && bun run test:path-parity",
+    "test": "bun run test:types && bun run test:array-methods && bun run test:proxy-delete && bun run test:wakeup-batch && bun run test:select-observable && bun run test:devtools-stream && bun run test:wait-for-store && bun run test:lifecycle && bun run test:nested-tree-batch && bun run test:nestable-cms && bun run test:store-component-flow && bun run test:store-board-wakeup && bun run test:deep-proxy-jsnq && bun run test:livequery && bun run test:bridge-contract && bun run test:array-splice-precise && bun run test:path-parity && bun run test:regressions",
     "verify": "bunx tsx verify.ts",
     "demo": "bunx tsx demo.ts",
     "bench:splice-precise": "bun --conditions browser test/splice-precise-bench.ts",
@@ -75,7 +75,8 @@
     "test:bridge-contract": "bun --conditions browser test/jsnq-bridge-contract.test.ts",
     "test:array-splice-precise": "bun --conditions browser test/array-splice-precise-wake.test.ts",
     "verify:exports": "node scripts/verify-exports.mjs",
-    "test:path-parity": "bun --conditions browser test/path-core-jsnq-parity.test.ts"
+    "test:path-parity": "bun --conditions browser test/path-core-jsnq-parity.test.ts",
+    "test:regressions": "bun --conditions browser test/regressions.test.ts"
   },
   "peerDependencies": {
     "solid-js": ">=1.8.0 <2.0.0",

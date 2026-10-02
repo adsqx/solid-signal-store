@@ -2,7 +2,7 @@
 // proxy; writes and deletes go through the store mutator and wake the touched signals.
 
 import { getParentPath, isValidPath } from '../internal/path';
-import { isBranch } from '../internal/util';
+import { isBranch, ownValue } from '../internal/util';
 import type { NodeMethod, ProxyContext } from './types';
 import { NODE_KEYS, ROOT_KEYS, type KeyTable, type ProxyNode } from './node-keys';
 
@@ -78,7 +78,10 @@ export class NodeHandler implements ProxyHandler<object>, ProxyNode {
     if (v === undefined) mutator.batch(() => engine.wakeMutation(mutator.delete(tp)));
     // A lone primitive leaf dirties a single signal, so it needs no batch.
     else if (!isBranch(v) && !mutator._wakeParentsOnChange) engine.wakeMutation(mutator.write(tp, v));
-    else mutator.batch(() => engine.wakeMutation(mutator.write(tp, v)));
+    else {
+      const owned = ownValue(v); // store a copy, never the caller's (or the store's own) object
+      mutator.batch(() => engine.wakeMutation(mutator.write(tp, owned)));
+    }
 
     mutator.emitDevAction({ type: 'SET_VALUE', payload: { path: tp, value: v } });
     return true;

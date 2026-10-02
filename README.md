@@ -115,8 +115,12 @@ store.user.preferences();                // => {}
 ```
 
 The initial state is cloned when the store is created, so mutating the object you passed
-in does not affect the store. Reads, in contrast, return the store's own objects: treat
-the result of `store.user()` as read-only and write through the proxy instead.
+in does not affect the store. Assignments copy too: a plain object or array you assign (or
+pass to `push`, `unshift`, `splice`, `api.setValue`) is stored as a copy, so
+`store.a.b = store.a()` cannot create a cycle and editing the object afterwards leaves the store
+alone. `Date`, `Map` and class instances are stored by reference. Reads, in contrast, return
+the store's own objects: treat the result of `store.user()` as read-only and write through the
+proxy instead.
 
 ### Fine-Grained Wake
 

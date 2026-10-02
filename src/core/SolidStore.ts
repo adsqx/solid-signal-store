@@ -17,7 +17,7 @@ import { createSolidProxy } from '../proxy/solid-proxy';
 import { WAKE_MODE_BRANCH, isWakeMode, type SolidProxyOptions, type SolidWakeMode, type StoreMutator } from '../proxy/types';
 import { arrayOp, queryArray, type ArrayOpHost } from '../array/array-ops';
 import { createArrayChain } from '../array/array-chain';
-import { deleteResult } from '../internal/util';
+import { deleteResult, ownValue } from '../internal/util';
 import {
   EMPTY_DEV_STREAM,
   publishDev,
@@ -114,7 +114,7 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
     this.emitDevAction({ type: 'CLEANUP', payload: { path, cleanedPaths: [path], cleanedCount: 1 } });
   }
   readStore(path = ''): unknown { return this.read(path); }
-  setValue(path: string, value: unknown): void { this.#assign(path ?? '', value); }
+  setValue(path: string, value: unknown): void { this.#assign(path ?? '', ownValue(value)); }
   deleteValue(path: string): void {
     if (!path) return;
     this.reactivity?.wakeMutation(this.delete(path));
