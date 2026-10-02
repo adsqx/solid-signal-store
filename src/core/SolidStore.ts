@@ -25,7 +25,7 @@ import {
   type SolidDevtoolsAdapter,
   type StoreDevToolsAction,
 } from './dev-service';
-import type { SolidLiveQuery, SolidStoreOptions, SolidStoreProxy, SolidStoreReactivity } from './types';
+import type { Draft, SolidLiveQuery, SolidStoreOptions, SolidStoreProxy, SolidStoreReactivity } from './types';
 import { destroyRegistered, registerStore, unregisterStore } from './registry';
 import { createProjectionObservable, type ProjectionObservableOptions } from './rx-interop';
 import { commitRoot, createLiveQuery, mutate, pipe, runQuery, type JsnqHost } from './store-jsnq';
@@ -43,6 +43,9 @@ export class SolidStore<T extends object = Record<string, unknown>> {
   private destroyed = false;
   // One host object shared with the jsnq / array modules (built once, no per-call closures).
   readonly #host: JsnqHost & ArrayOpHost;
+
+  /** Plain-JSON write view of the whole store (same object as `store.$draft`): typed as `Draft<T>`, reads are untracked, writes go through the store. */
+  get draft(): Draft<T> { return (this.store as unknown as { $draft: Draft<T> }).$draft; }
 
   /** Action stream (subscribe for SET_VALUE/MUTATE/DELETE/PROXY_METRICS events). */
   get devAction$(): DevStream { return this.devService?.action$ ?? EMPTY_DEV_STREAM; }

@@ -36,8 +36,19 @@ export type StoreLiveQuery<T> = (() => T) & {
   dispose(): void;
 };
 
+/** Deep-mutable plain data type: strips `readonly`, recurses into objects and arrays; functions and primitives as is. */
+export type Draft<T> = T extends (...args: any[]) => unknown
+  ? T
+  : T extends readonly (infer U)[]
+    ? Draft<U>[]
+    : T extends object
+      ? { -readonly [K in keyof T]: Draft<T[K]> }
+      : T;
+
 export type StoreLeaf<T> = (() => T) & {
   readonly $val: T;
+  /** Untracked plain-JSON read/write view of this path (see `Draft`); writes route through the store. */
+  readonly $draft: Draft<T>;
   readonly $signal: () => T;
   toJSON(): T;
   valueOf(): T;

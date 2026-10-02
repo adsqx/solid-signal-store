@@ -34,7 +34,7 @@ const [name] = createSignal(store.user.name());
 // RIGHT — derives from the store on every read
 const greeting = createRoot(() => createMemo(() => `Hello ${store.user.name()}`));
 
-write.user.name = 'Ada';
+store.$draft.user.name = 'Ada';
 name();                    // => 'Ann'
 greeting();                // => 'Hello Ada'
 ```
@@ -70,7 +70,7 @@ export const api = createSolidStore<State>({
 }, 'app');
 
 export const store = api.store;                  // reads: store.user.name()
-export const write = store as unknown as State;  // typed writes: write.user.name = 'Ada'
+                                                 // typed writes: store.$draft.user.name = 'Ada'
 ```
 
 Use a `type` alias for the state (an `interface` does not satisfy the
@@ -96,21 +96,25 @@ const same = useSolidStore('app'); // synchronous; throws when missing
 <!-- check: prelude -->
 ```ts
 store.user.name();                                     // => 'Ann'
-write.user.name = 'Ada';
-write.dashboard.tiles = store.dashboard.tiles() + 1;
-write.user.tags.push('maintainer');
+store.$draft.user.name = 'Ada';
+store.$draft.dashboard.tiles = store.dashboard.tiles() + 1;
+store.$draft.user.tags.push('maintainer');
 store.user.tags.pop();                                 // => 'maintainer'
-write.user.preferences.theme = 'dark';                 // dynamic key under an index signature
+store.$draft.user.preferences.theme = 'dark';                 // dynamic key under an index signature
 store.user.preferences.theme();                        // => 'dark'
-write.user.preferences.theme = undefined;              // assigning undefined deletes the key
+store.$draft.user.preferences.theme = undefined;              // assigning undefined deletes the key
 store.dashboard.tiles();                               // => 13
 ```
 
 **TypeScript rejects `store.user.name = 'Ada'`** on a typed store (the property type is the
 accessor). In JavaScript, or on an `any`-typed store, direct assignment works. In typed code
-assign through the cast write view above, or use `api.setValue('user.name', 'Ada')`. Never
-*read* through the write view. Declare optional fields or an index signature when a key is
-not in the initial state.
+write through **`store.$draft`** (also `api.draft`): a view typed as your plain data
+(`Draft<State>`), so `store.$draft.user.name = 'Ada'` typechecks like plain JSON and still
+goes through the store (same precise wake). Its reads are untracked snapshots, so keep
+reactive reads on `store.user.name()`. Arrays: `store.$draft.user.tags.push(...)`;
+`store.$draft.services.find((s) => s.name === 'api')!.rps = 1` writes through. Or use
+`api.setValue('user.name', 'Ada')`. Declare optional fields or an index signature when a key
+is not in the initial state.
 
 Reads return the store's own objects, not copies: never mutate the result of `store.user()`.
 
@@ -139,7 +143,7 @@ export function Dashboard() {
 
       <span>{store.history.length} samples</span>
 
-      <button onClick={() => { write.dashboard.tiles = store.dashboard.tiles() + 1; }}>
+      <button onClick={() => { store.$draft.dashboard.tiles = store.dashboard.tiles() + 1; }}>
         Add tile
       </button>
     </>
@@ -171,8 +175,8 @@ that reads `store.user()` is not woken by `store.user.name = ...`. Read the leav
 <!-- check: prelude -->
 ```ts
 api.batch(() => {
-  write.user.name = 'Ada';
-  write.dashboard.tiles = 16;
+  store.$draft.user.name = 'Ada';
+  store.$draft.dashboard.tiles = 16;
 });
 
 api.wakeUp('grained');              // default mode for subsequent writes
@@ -278,7 +282,7 @@ api.destroy(); // idempotent; clears caches, subscriptions, and the devtools ada
 - Create stores once at module scope with a unique name.
 - Call leaves (`path()`), do not call loop items (`item.field`); bind changing item fields
   through the index (`store.list[i()].field()`).
-- In TypeScript, assign through a typed write view or `api.setValue`, never read through it.
+- In TypeScript use `store.$draft` for typed writes (its reads do not subscribe; reactive reads stay `store.x()`), or `api.setValue`.
 - Import `@adsq/solid-signal-store/jsnq` once before using `mutate` / `$query`.
 - Reach for `api.batch()` only when several writes must land as one update.
 - Dispose live queries and subscriptions you create; use `onCleanup` in components.

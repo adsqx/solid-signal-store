@@ -22,8 +22,8 @@ Consumers of the published package can install it as a skill; see the README sec
   queries), `dev-service.ts` (devtools contract, bus and adapter), `rx-interop.ts`, `types.ts`.
 - `src/proxy/` — the callable nested proxy: `solid-proxy.ts` (`createSolidProxy`, node
   creation), `proxy-handler.ts` (get/set/delete traps), `node-keys.ts` (special-key and
-  dispatch tables, consulted only after a child-cache miss), `wake-engine.ts` (signals and
-  wake modes), `signal-trie.ts`, `types.ts`.
+  dispatch tables, consulted only after a child-cache miss), `draft.ts` (the `$draft`
+  plain-JSON write view), `wake-engine.ts` (signals and wake modes), `signal-trie.ts`, `types.ts`.
 - `src/array/` — array method dispatch (`array-ops.ts`), the fluent chain (`array-chain.ts`)
   and the `solid-array.ts` barrel.
 - `src/internal/` — `path.ts` (path parsing; also published as `InternalPath`) and `util.ts`
@@ -68,5 +68,5 @@ All four must pass. Notes:
 `README.md`, `SKILL.md` and `examples/browser-demo/README.md` describe the public API as
 exported from `src/index.ts`, `src/jsnq.ts` and `src/devtools.ts`. Keep their code samples
 compiling: on a typed store, direct assignment (`store.user.name = 'Ada'`) is a type error,
-so samples assign through `api.setValue` or a cast write view instead. When a public
-signature changes, update the docs and the API reference table in the same change.
+so samples assign through `store.$draft` (the typed plain-JSON view) or `api.setValue`
+instead. When a public signature changes, update the docs and the API reference table in the same change.

@@ -20,6 +20,7 @@ store.user.name = 'Ada';    // write + wake only the consumers of "user.name"
 
 - [Install](#install)
 - [Quick Start](#quick-start)
+- [Writing Like Plain JSON: `$draft`](#writing-like-plain-json-draft)
 - [Core Concepts](#core-concepts)
 - [In Solid Components](#in-solid-components)
 - [Arrays](#arrays)
@@ -65,18 +66,54 @@ const api = createSolidStore<State>({
 }, 'app');
 
 const store = api.store;                 // read and subscribe: store.user.name()
-const write = store as unknown as State; // typed assignment view, see "TypeScript"
+const draft = store.$draft;              // typed plain-JSON write view, see below
 
 store.user.name();                       // => 'Ann'
-write.user.name = 'Ada';
-write.user.tags.push('maintainer');
+draft.user.name = 'Ada';
+draft.user.tags.push('maintainer');
 store.user.name();                       // => 'Ada'
 store.user.tags();                       // => ['admin', 'maintainer']
 ```
 
-In plain JavaScript, or when `store` is typed `any`, assign to `store` directly:
-`store.user.name = 'Ada'`. TypeScript needs the `write` view or `api.setValue`; the reason
-is explained in [TypeScript](#typescript).
+In plain JavaScript, or when `store` is typed `any`, you can also assign to `store`
+directly: `store.user.name = 'Ada'`. In TypeScript use `store.$draft` (next section) or
+`api.setValue`; the reason is explained in [TypeScript](#typescript).
+
+## Writing Like Plain JSON: `$draft`
+
+On a typed store `store.user.name` is typed as the accessor, so `store.user.name = 'Ada'` is
+a compile error. `store.$draft` (also `api.draft`) is an opt-in view typed as your plain
+data, `Draft<State>`, so writes look and typecheck exactly like plain JSON while every
+write still goes through the store: the same precise wake, the same devtools event.
+
+<!-- check: prelude -->
+```ts
+const draft = api.draft;                 // same object as store.$draft
+
+draft.user.name = 'Ada';                 // typed: `= 1` is a compile error
+draft.user.tags.push('maintainer');      // routed to the store's array methods
+draft.user.preferences.theme = 'dark';
+delete draft.user.preferences.theme;     // same as delete store.user.preferences.theme
+draft.userList.find((u) => u.id === 2)!.active = true;   // elements are draft proxies too
+JSON.stringify(draft.dashboard);         // => '{"tiles":12}'
+store.userList[1].active();              // => true
+```
+
+Spread, `Object.keys`, `Array.isArray` and `for...of` behave like on plain data.
+
+- **Reads are snapshots, not subscriptions.** A primitive read returns the current plain
+  value and never subscribes the running effect, memo or template. Keep reactive reads on
+  `store.x()`; use `$draft` in handlers and other non-reactive code.
+- **Objects and arrays come back as draft proxies** for that path. They always show the
+  value currently at the path (after a parent replacement or an array reorder too), and
+  assigning through them writes through the store.
+- **Array mutators** (`push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse`,
+  `fill`, `copyWithin`) call the store's array operations. Reading methods (`map`, `filter`,
+  `find`, `some`, `indexOf`, ...) run over the draft view, so the elements they return are
+  draft proxies.
+- **Writing a draft proxy as a value stores a detached plain copy** (`draft.a = draft.b`
+  never aliases two paths).
+- Any node has the same view rooted at itself: `store.user.$draft.name = 'Ada'`.
 
 Create stores at module scope (or once, in a context) and import them where they are used. A
 store is not tied to a component, and creating one inside a component body would rebuild
@@ -108,17 +145,18 @@ assigning `undefined` deletes a key:
 
 <!-- check: prelude -->
 ```ts
-write.user.preferences.theme = 'dark';
+store.$draft.user.preferences.theme = 'dark';
 store.user.preferences.theme();          // => 'dark'
-write.user.preferences.theme = undefined;
+store.$draft.user.preferences.theme = undefined;
 store.user.preferences();                // => {}
 ```
 
 The initial state is cloned when the store is created, so mutating the object you passed
-in does not affect the store. Assignments copy too: a plain object or array you assign (or
-pass to `push`, `unshift`, `splice`, `api.setValue`) is stored as a copy, so
-`store.a.b = store.a()` cannot create a cycle and editing the object afterwards leaves the store
-alone. `Date`, `Map` and class instances are stored by reference. Reads, in contrast, return
+in does not affect the store. Assignments copy too: a plain object or array you assign
+(`store.a.b = obj`, `api.setValue`) is stored as a copy, so `store.a.b = store.a()` cannot create
+a cycle and editing the object afterwards leaves the store alone. `Date`, `Map` and class instances
+are stored by reference. Array methods (`push`, `unshift`, `splice`) keep their items by reference,
+like native arrays. Reads, in contrast, return
 the store's own objects: treat the result of `store.user()` as read-only and write through the
 proxy instead.
 
@@ -138,9 +176,9 @@ createRoot(() => {
   createEffect(() => log.push(`tiles=${store.dashboard.tiles()}`));
 });
 
-write.user.name = 'Ada';      // wakes only the name effect
-write.user.name = 'Ada';      // same primitive value: nothing wakes
-write.dashboard.tiles = 13;   // wakes only the tiles effect
+store.$draft.user.name = 'Ada';      // wakes only the name effect
+store.$draft.user.name = 'Ada';      // same primitive value: nothing wakes
+store.$draft.dashboard.tiles = 13;   // wakes only the tiles effect
 
 log;                          // => ['name=Ann', 'tiles=12', 'name=Ada', 'tiles=13']
 ```
@@ -178,8 +216,8 @@ createRoot((dispose) => {
   const greeting = createMemo(() => `Hello ${store.user.name()}`);
   const doubled = api.computedOf((s) => s.dashboard.tiles() * 2);
 
-  write.user.name = 'Ada';
-  write.dashboard.tiles = 20;
+  store.$draft.user.name = 'Ada';
+  store.$draft.dashboard.tiles = 20;
 
   greeting();          // => 'Hello Ada'
   doubled();           // => 40
@@ -197,9 +235,9 @@ unless you pass `equals`), and returns `{ unsubscribe, dispose }`. Options are
 const titles: string[] = [];
 const sub = api.select((s) => s.user.name().toUpperCase()).subscribe((v) => titles.push(v));
 
-write.user.name = 'Ada';
+store.$draft.user.name = 'Ada';
 sub.unsubscribe();
-write.user.name = 'Grace';
+store.$draft.user.name = 'Grace';
 
 titles;                // => ['ANN', 'ADA']
 ```
@@ -231,7 +269,7 @@ export function Dashboard() {
 
       <p>{store.history.length} samples</p>
 
-      <button onClick={() => { write.dashboard.tiles = store.dashboard.tiles() + 1; }}>
+      <button onClick={() => { store.$draft.dashboard.tiles = store.dashboard.tiles() + 1; }}>
         Add tile
       </button>
     </>
@@ -353,14 +391,14 @@ let runs = 0;
 createRoot(() => createEffect(() => { store.user.name(); store.dashboard.tiles(); runs++; }));
 
 api.batch(() => {
-  write.user.name = 'Grace';
-  write.dashboard.tiles = 16;
+  store.$draft.user.name = 'Grace';
+  store.$draft.dashboard.tiles = 16;
   store.dashboard.tiles();   // => 16
 });
 runs;                        // => 2
 
-write.user.name = 'Hopper';
-write.dashboard.tiles = 20;
+store.$draft.user.name = 'Hopper';
+store.$draft.dashboard.tiles = 20;
 runs;                        // => 4
 ```
 
@@ -400,11 +438,11 @@ import { createMemo, createRoot } from 'solid-js';
 const summary = createRoot(() => createMemo(() => store.user().name));
 
 // Grained: the memo read the container, so a leaf write does not wake it.
-write.user.name = 'Grace';
+store.$draft.user.name = 'Grace';
 summary();                  // => 'Ann'
 
 api.wakeUp('container');
-write.user.name = 'Hopper';
+store.$draft.user.name = 'Hopper';
 summary();                  // => 'Hopper'
 ```
 
@@ -457,7 +495,7 @@ const seen: number[] = [];
 const subscription = active.subscribe((users) => seen.push(users.length));
 
 active();                                                     // => [{ id: 1, name: 'Ann', active: true, score: 10 }]
-write.userList[1].active = true;
+store.$draft.userList[1].active = true;
 active().length;                                              // => 2
 
 subscription.unsubscribe();
@@ -598,10 +636,9 @@ Things worth knowing:
 // 1. Path-based setter: any value, path checked only at runtime.
 api.setValue('user.name', 'Grace');
 
-// 2. A typed write view: cast the proxy to your plain state type and only assign through it.
-const write = store as unknown as State;
-write.user.name = 'Ada';
-write.user.tags.push('maintainer');
+// 2. The typed plain-JSON view `$draft` (type `Draft<State>`): assign like plain data.
+store.$draft.user.name = 'Ada';
+store.$draft.user.tags.push('maintainer');
 
 // 3. Untyped code: `const store: any = api.store` accepts assignment directly.
 
@@ -609,15 +646,15 @@ store.user.name();                       // => 'Ada'
 store.user.tags();                       // => ['admin', 'maintainer']
 ```
 
-  The write view is a type-level convenience, so never *read* through it (`write.user.name`
-  is a proxy at runtime, not a `string`).
+  `$draft` reads are untracked snapshots (see [Writing Like Plain JSON](#writing-like-plain-json-draft));
+  keep reactive reads on `store.user.name()`.
 - **Optional fields** (`nick?: string`) are optional on the proxy type too. Use `?.()` or a
   non-null assertion when reading them, or declare the field as `string | undefined`
   and give it an initial value.
 - **Dynamic keys** need an index signature (`Record<string, unknown>`) or optional fields
   in the state type.
 - `$query` returns `unknown[]` and `$queryOne` returns `unknown`; cast to your item type.
-- `SolidStoreProxy<T>`, `StoreLeaf<T>`, `StoreArray<T>`, and the option types are exported
+- `SolidStoreProxy<T>`, `StoreLeaf<T>`, `StoreArray<T>`, `Draft<T>`, and the option types are exported
   from the main entry.
 
 ## Lazy Creation
@@ -707,7 +744,7 @@ All entries are ESM only.
 | `InternalPath` | namespace | Advanced and low-level: the path helpers the store uses (`normalizePath`, `splitPath`, `getByPath`, `setByPath`, `pathExists`, `isValidPath`, `getParentPath`, `enumerateAncestors`, `resolveParentAndKey`, `clearPathCaches`, and others). | `import { InternalPath } from '@adsq/solid-signal-store'` |
 
 Types exported from the main entry: `SolidStoreOptions`, `WaitForStoreOptions`,
-`SolidStoreProxy<T>`, `StoreLeaf<T>`, `StoreArray<T>`, `SolidWakeMode`, `StoreMutator`,
+`SolidStoreProxy<T>`, `StoreLeaf<T>`, `StoreArray<T>`, `Draft<T>`, `SolidWakeMode`, `StoreMutator`,
 `SolidProxyOptions`, `SolidStoreReactivity`, `SolidProxyMetrics`, `DevStream`,
 `DevToolsEvent`, `StoreDevToolsAction`, `ProxyMetrics`, `SolidDevtoolsAdapter`.
 
@@ -728,6 +765,7 @@ Types exported from the main entry: `SolidStoreOptions`, `WaitForStoreOptions`,
 | Member | Purpose | Signature |
 | --- | --- | --- |
 | `store` | The callable proxy root. `returnStore()` returns the same object. | `SolidStoreProxy<T>` |
+| `draft` | The plain-JSON write view of the whole store, same object as `store.$draft`. Reads are untracked; writes go through the store. | `Draft<T>` |
 | `batch` | Group writes into one reactive update. | `<R>(fn: () => R) => R` |
 | `wakeUp` | Set the default wake mode, or wake one path now. | `(mode: SolidWakeMode) => void` / `(path: string, mode?: SolidWakeMode) => void` |
 | `setWakeMode`, `wakePath` | Aliases for the two `wakeUp` forms. | `(mode) => void`, `(path, mode = 'grained') => void` |
@@ -760,6 +798,7 @@ Every node of `store` (root, object, array, or leaf) has:
 | `node()` | Reactive read of the path. Same as `node.$val`. |
 | `node.$val` | Reactive read as a property. |
 | `node.$signal` | The underlying Solid accessor, `() => T`. |
+| `node.$draft` | Untracked plain-JSON read/write view rooted at this path, typed `Draft<T>` (deep-mutable plain data type). See [Writing Like Plain JSON](#writing-like-plain-json-draft). |
 | `node.$subscribe(cb, options?)` | Subscribe to the path's value. Returns `{ unsubscribe, dispose }`. On an object or array it fires for any change beneath it; primitive leaves are deduplicated with `Object.is`. Pass `equals` to override. |
 | `node.$query`, `$queryOne`, `$liveQuery`, `$liveQueryOne`, `$mutate`, `$pipe`, `$array` | The JSNQ and array operations, with a `$` prefix that can never collide with a data key. |
 | `node.toJSON()`, `node.valueOf()` | Plain value, so `JSON.stringify(store.user)` works. |
@@ -834,7 +873,7 @@ Import the entry once during bootstrap: `import '@adsq/solid-signal-store/jsnq'`
 
 ### `store.user.name = 'Ada'` is a TypeScript error
 
-See [TypeScript](#typescript): use `api.setValue`, a typed write view, or an untyped store.
+See [TypeScript](#typescript): use `store.$draft` (typed plain-JSON writes), `api.setValue`, or an untyped store.
 
 ### A key called `filter`, `length`, `query`, or `mutate` cannot be read
 

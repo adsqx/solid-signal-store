@@ -15,7 +15,7 @@ export type { StoreMutator, SolidProxyOptions, SolidWakeMode } from './proxy/sol
 // Rx interop (minimal for .select parity)
 export { createProjectionObservable } from './core/rx-interop';
 
-export type { SolidProxyMetrics, SolidStoreOptions, SolidStoreProxy, SolidStoreReactivity, StoreArray, StoreLeaf } from './core/types';
+export type { Draft, SolidProxyMetrics, SolidStoreOptions, SolidStoreProxy, SolidStoreReactivity, StoreArray, StoreLeaf } from './core/types';
 export type {
   DevStream,
   DevToolsEvent,

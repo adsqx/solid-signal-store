@@ -5,6 +5,7 @@
 import { ARRAY_EXTRA_MUTATION_METHODS, ARRAY_EXTRA_QUERY_METHODS, ARRAY_METHODS } from '../array/array-ops';
 import { createProjectionObservable, subscription, type ProjectionObservableOptions } from '../core/rx-interop';
 import { isBranch } from '../internal/util';
+import { draftView } from './draft';
 import type { NodeMethod, ProxyContext } from './types';
 
 /** The slice of a node handler the key tables read. */
@@ -97,6 +98,7 @@ export const NODE_KEYS = table(
   names(Object.keys(DISPATCH_ALIAS), cached(buildDispatch)),
   {
     $subscribe: cached(buildSubscribe),
+    $draft: (node) => draftView(node.ctx, node.path), // untracked plain-JSON write view rooted here
     $val: (node) => node.read(),
     $signal: accessor,
     valueOf: accessor,
