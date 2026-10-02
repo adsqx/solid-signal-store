@@ -17,9 +17,17 @@ Consumers of the published package can install it as a skill; see the README sec
 
 ## Repository layout
 
-- `src/core/` — store lifecycle, named registry, batching, wake modes.
-- `src/proxy/` — the callable nested proxy and its reactivity bindings.
-- `src/array/` — array method dispatch and mutation handling.
+- `src/core/` — `SolidStore.ts` (the class, root commit, dev lifecycle), `registry.ts` (named
+  stores, `waitForStore`, `useSolidStore`), `store-jsnq.ts` (mutate / pipe / queries / live
+  queries), `dev-service.ts` (devtools contract, bus and adapter), `rx-interop.ts`, `types.ts`.
+- `src/proxy/` — the callable nested proxy: `solid-proxy.ts` (`createSolidProxy`, node
+  creation), `proxy-handler.ts` (get/set/delete traps), `node-keys.ts` (special-key and
+  dispatch tables, consulted only after a child-cache miss), `wake-engine.ts` (signals and
+  wake modes), `signal-trie.ts`, `types.ts`.
+- `src/array/` — array method dispatch (`array-ops.ts`), the fluent chain (`array-chain.ts`)
+  and the `solid-array.ts` barrel.
+- `src/internal/` — `path.ts` (path parsing; also published as `InternalPath`) and `util.ts`
+  (shared guards, bounded cache, mutation-result builders).
 - `src/jsnq/solid-pipeline-bridge.ts` — the optional JSNQ integration. The engine itself
   is the separate `@adsq/jsnq` package; do not vendor or fork it here.
 - `test/` — contract tests; `test/browser/` — Playwright specs.
