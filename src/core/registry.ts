@@ -33,13 +33,13 @@ export function destroyRegistered(name: string): void {
   stores.get(name)?.destroy();
 }
 
-export function useSolidStore<T extends Record<string, unknown> = any>(name = 'default'): SolidStore<T> {
+export function useSolidStore<T extends object = any>(name = 'default'): SolidStore<T> {
   const store = stores.get(name);
   if (!store) throw new Error(`[SolidStore] useSolidStore('${name}'): store not found. Create first.`);
   return store as SolidStore<T>;
 }
 
-export function waitForStore<T extends Record<string, unknown> = any>(
+export function waitForStore<T extends object = any>(
   name = 'default',
   options: WaitForStoreOptions = {}
 ): Promise<SolidStore<T>> {

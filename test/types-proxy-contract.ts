@@ -40,3 +40,8 @@ void firstTitle;
 void firstTag;
 void pushedLength;
 void mappedTitles;
+
+// State declared as an interface (no index signature) is accepted.
+interface IfaceSettings { theme: string; size: number }
+const ifaceStore = createSolidStore<IfaceSettings>({ theme: 'dark', size: 1 }, 'iface-contract');
+void ifaceStore;

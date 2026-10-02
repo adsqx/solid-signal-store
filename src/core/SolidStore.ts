@@ -30,7 +30,7 @@ import { destroyRegistered, registerStore, unregisterStore } from './registry';
 import { createProjectionObservable, type ProjectionObservableOptions } from './rx-interop';
 import { commitRoot, createLiveQuery, mutate, pipe, runQuery, type JsnqHost } from './store-jsnq';
 
-export class SolidStore<T extends Record<string, unknown> = Record<string, unknown>> {
+export class SolidStore<T extends object = Record<string, unknown>> {
   readonly store: SolidStoreProxy<T>; // the callable proxied reactive root (full surface via traps)
   private readonly data: T;
   private name: string;
@@ -208,7 +208,7 @@ export class SolidStore<T extends Record<string, unknown> = Record<string, unkno
   }
 }
 
-export function createSolidStore<T extends Record<string, unknown>>(
+export function createSolidStore<T extends object>(
   initial: T,
   name = 'default',
   options?: SolidStoreOptions

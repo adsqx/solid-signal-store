@@ -588,8 +588,7 @@ const count: number = store.user.posts.length;
 
 Things worth knowing:
 
-- **Use a `type` alias for the state, not an `interface`.** `createSolidStore` requires
-  `T extends Record<string, unknown>`, which an interface does not satisfy.
+- **The state can be a `type` or an `interface`** (`createSolidStore<T extends object>`).
 - **Direct assignment does not type-check on a typed store.** The type of
   `store.user.name` is the accessor (`StoreLeaf<string>`), so
   `store.user.name = 'Ada'` is rejected even though it works at runtime. Use one of:
@@ -836,7 +835,6 @@ Import the entry once during bootstrap: `import '@adsq/solid-signal-store/jsnq'`
 ### `store.user.name = 'Ada'` is a TypeScript error
 
 See [TypeScript](#typescript): use `api.setValue`, a typed write view, or an untyped store.
-Also check that the state type is a `type` alias and not an `interface`.
 
 ### A key called `filter`, `length`, `query`, or `mutate` cannot be read
 
