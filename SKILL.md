@@ -243,9 +243,9 @@ created and only `dispose()` releases it, so inside a component call
 
 `createMemo(() => ...)` over store reads is the default. `api.computedOf((s) => ...)` is the
 same memo scoped to the store, and `api.select((s) => ...)` returns `{ subscribe, value }`
-for a push subscription. `node.$subscribe(cb, { equals: () => false })` observes a path; on
-an object or array pass `equals: () => false`, otherwise in-place changes are suppressed
-because the reference is unchanged.
+for a push subscription. `node.$subscribe(cb)` observes a path: on an object or array it fires
+for any change beneath it, and a primitive leaf fires only when its value changes. Pass
+`{ equals }` to override the comparison.
 
 ## Devtools and cleanup
 

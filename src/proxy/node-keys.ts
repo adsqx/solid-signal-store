@@ -4,6 +4,7 @@
 
 import { ARRAY_METHODS } from '../array/array-ops';
 import { createProjectionObservable, subscription, type ProjectionObservableOptions } from '../core/rx-interop';
+import { isBranch } from '../internal/util';
 import type { NodeMethod, ProxyContext } from './types';
 
 /** The slice of a node handler the key tables read. */
@@ -66,13 +67,18 @@ const buildArrayMethod: MethodBuilder = (node, method) => {
   };
 };
 
+// Default equality of a path subscription: a branch is the same reference after an in-place edit, so
+// it never counts as unchanged; primitive leaves stay deduplicated.
+const branchAwareEquals = (a: unknown, b: unknown): boolean => !isBranch(a) && !isBranch(b) && Object.is(a, b);
+
 // Value subscription for a path (backs $subscribe): registers branch interest so a subscription on an
 // object/array also fires on descendant mutations, and releases it on close.
 const buildSubscribe: MethodBuilder = ({ ctx: { engine }, path, read }) =>
   (...args) => {
     const [cb, options] = args as [(value: unknown) => void, ProjectionObservableOptions<unknown> | undefined];
     engine.addBranchSub(path);
-    return subscription(createProjectionObservable(read, options).subscribe(cb), () => engine.removeBranchSub(path));
+    const opts = { ...options, equals: options?.equals ?? branchAwareEquals };
+    return subscription(createProjectionObservable(read, opts).subscribe(cb), () => engine.removeBranchSub(path));
   };
 
 const accessor: KeyResolver = (node) => node.read;

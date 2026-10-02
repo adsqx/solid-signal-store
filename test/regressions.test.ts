@@ -88,4 +88,42 @@ function watch(read: () => unknown) {
   api.destroy();
 }
 
+// ---------------------------------------------------------------------------------------------
+// 2. $subscribe on an object/array fires for in-place changes with the default equality
+// ---------------------------------------------------------------------------------------------
+{
+  const api = fresh({ user: { name: 'Ann', address: { city: 'Oslo' } }, list: [1, 2, 3], n: 1 });
+  const s = api.store as any;
+  const obj: unknown[] = [], arr: unknown[] = [], leaf: number[] = [], custom: unknown[] = [];
+  const subs = [
+    s.user.$subscribe((v: unknown) => obj.push(JSON.stringify(v))),
+    s.list.$subscribe((v: unknown) => arr.push(JSON.stringify(v))),
+    s.n.$subscribe((v: number) => leaf.push(v)),
+    s.user.$subscribe((v: unknown) => custom.push(v), { equals: () => true }),
+  ];
+  assert(obj.length === 1 && arr.length === 1 && leaf.length === 1, 'subscriptions emit the initial value');
+
+  s.user.name = 'Ada';
+  assert(obj.length === 2 && obj[1] === JSON.stringify({ name: 'Ada', address: { city: 'Oslo' } }), 'object subscription fires on a leaf edit');
+  s.user.address.city = 'Rome';
+  assert(obj.length === 3, 'object subscription fires on a deep edit');
+  s.list.push(4);
+  assert(arr.length === 2, 'array subscription fires on push');
+  s.list[0] = 9;
+  assert(arr.length === 3 && arr[2] === '[9,2,3,4]', 'array subscription fires on an element write');
+  s.list.sort((a: number, b: number) => a - b);
+  assert(arr.length === 4, 'array subscription fires on sort');
+
+  s.n = 1;
+  assert(leaf.length === 1, 'primitive leaf subscription stays deduplicated');
+  s.n = 2;
+  assert(same(leaf, [1, 2]), 'primitive leaf subscription fires on change');
+  assert(custom.length === 1, 'an explicit equals option is still honoured');
+
+  subs.forEach((sub) => sub.unsubscribe());
+  s.user.name = 'Zed';
+  assert(obj.length === 3, 'unsubscribed object subscription stays silent');
+  api.destroy();
+}
+
 console.log('All regression tests passed.');

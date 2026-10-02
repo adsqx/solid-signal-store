@@ -760,7 +760,7 @@ Every node of `store` (root, object, array, or leaf) has:
 | `node()` | Reactive read of the path. Same as `node.$val`. |
 | `node.$val` | Reactive read as a property. |
 | `node.$signal` | The underlying Solid accessor, `() => T`. |
-| `node.$subscribe(cb, options?)` | Subscribe to the path's value. Returns `{ unsubscribe, dispose }`. See the FAQ about `equals` on containers. |
+| `node.$subscribe(cb, options?)` | Subscribe to the path's value. Returns `{ unsubscribe, dispose }`. On an object or array it fires for any change beneath it; primitive leaves are deduplicated with `Object.is`. Pass `equals` to override. |
 | `node.$query`, `$queryOne`, `$liveQuery`, `$liveQueryOne`, `$mutate`, `$pipe`, `$array` | The JSNQ and array operations, with a `$` prefix that can never collide with a data key. |
 | `node.toJSON()`, `node.valueOf()` | Plain value, so `JSON.stringify(store.user)` works. |
 
@@ -826,13 +826,6 @@ that writes also wake their parents, or observe the container with `$subscribe` 
 mode. Use `store.list.splice(1, 1, item)`, the fluent chain (`store.list.array().update(1,
 item)`), or bind through the index. `push`, `pop`, `shift`, `unshift`, `splice`, `sort`,
 `reverse`, and assigning a whole array do wake the array node.
-
-### `$subscribe` on an object or array fires once and then stays silent
-
-The subscription compares values with `Object.is`, and an object or array edited in place is
-the same reference. Pass `{ equals: () => false }` to be notified on every wake:
-`store.list.$subscribe(cb, { equals: () => false })`. `$liveQuery` results are new arrays
-and are not affected.
 
 ### `mutate` / `$query` throws "requires the optional JSNQ bridge"
 
