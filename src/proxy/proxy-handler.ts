@@ -4,7 +4,7 @@
 import { getParentPath, isValidPath } from '../internal/path';
 import { isBranch, ownValue } from '../internal/util';
 import type { NodeMethod, ProxyContext } from './types';
-import { NODE_KEYS, ROOT_KEYS, type KeyTable, type ProxyNode } from './node-keys';
+import { NODE_KEYS, NOT_RESERVED, ROOT_KEYS, type KeyTable, type ProxyNode } from './node-keys';
 
 const MAX_CHILD_CACHE_SIZE = 256;
 
@@ -54,7 +54,10 @@ export class NodeHandler implements ProxyHandler<object>, ProxyNode {
     const hit = this.children?.[k];
     if (hit) return hit;
     const resolve = this.keys[k];
-    return resolve ? resolve(this, k) : this.child(k);
+    if (!resolve) return this.child(k);
+    const resolved = resolve(this, k);
+    // Not cached as a child: the same node may hold an array later, when the key becomes a method.
+    return resolved === NOT_RESERVED ? this.ctx.factory(childPath(this.path, k)) : resolved;
   }
 
   private child(key: string): object {

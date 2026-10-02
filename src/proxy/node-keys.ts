@@ -2,7 +2,7 @@
 // child-cache miss: value accessors, `$subscribe`, store dispatch (mutate/pipe/select/...), array
 // methods and, on the root, the store-level operations.
 
-import { ARRAY_METHODS } from '../array/array-ops';
+import { ARRAY_EXTRA_MUTATION_METHODS, ARRAY_EXTRA_QUERY_METHODS, ARRAY_METHODS } from '../array/array-ops';
 import { createProjectionObservable, subscription, type ProjectionObservableOptions } from '../core/rx-interop';
 import { isBranch } from '../internal/util';
 import type { NodeMethod, ProxyContext } from './types';
@@ -20,6 +20,8 @@ export interface ProxyNode {
 }
 
 type MethodBuilder = (node: ProxyNode, key: string) => NodeMethod;
+/** Returned by a resolver that does not claim the key for this node: the key is read as a child path. */
+export const NOT_RESERVED: unique symbol = Symbol('not-reserved');
 export type KeyResolver = (node: ProxyNode, key: string) => unknown;
 export type KeyTable = Record<string, KeyResolver | undefined>;
 
@@ -81,11 +83,17 @@ const buildSubscribe: MethodBuilder = ({ ctx: { engine }, path, read }) =>
     return subscription(createProjectionObservable(read, opts).subscribe(cb), () => engine.removeBranchSub(path));
   };
 
+// The rest of Array.prototype: an array method only while the node holds an array (the check is an
+// untracked raw read), otherwise the key stays an ordinary data key.
+const arrayOnly: KeyResolver = (node, key) =>
+  Array.isArray(node.ctx.mutator.read(node.path)) ? node.method(key, buildArrayMethod) : NOT_RESERVED;
+
 const accessor: KeyResolver = (node) => node.read;
 
 // Built in precedence order: array methods first so the value accessors below win on 'length'.
 export const NODE_KEYS = table(
   names(ARRAY_METHODS, cached(buildArrayMethod)),
+  names([...ARRAY_EXTRA_QUERY_METHODS, ...ARRAY_EXTRA_MUTATION_METHODS], arrayOnly),
   names(Object.keys(DISPATCH_ALIAS), cached(buildDispatch)),
   {
     $subscribe: cached(buildSubscribe),

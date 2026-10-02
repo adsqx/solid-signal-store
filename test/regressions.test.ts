@@ -126,4 +126,78 @@ function watch(read: () => unknown) {
   api.destroy();
 }
 
+// ---------------------------------------------------------------------------------------------
+// 3. Every Array.prototype method works on a store array
+// ---------------------------------------------------------------------------------------------
+{
+  const api = fresh({ list: [3, 1, 2], objs: [{ id: 1 }, { id: 2 }], cfg: { values: 1, keys: 2, at: 3, join: 4 } });
+  const s = api.store as any;
+
+  assert(s.list.reduce((a: number, b: number) => a + b, 0) === 6, 'reduce returns the reduced value');
+  assert(s.list.reduce((a: number, b: number) => a + b) === 6, 'reduce without an initial value');
+  assert(s.list.reduceRight((a: string, b: number) => a + b, '') === '213', 'reduceRight');
+  assert(same(s.list.flatMap((x: number) => [x, x]), [3, 3, 1, 1, 2, 2]), 'flatMap');
+  assert(same(s.objs.map((o: any) => [o.id]).concat([]), [[1], [2]]), 'map result is a real array');
+  assert(same(s.list.flat(), [3, 1, 2]), 'flat');
+  assert(s.list.join('-') === '3-1-2', 'join');
+  assert(s.list.at(-1) === 2 && s.list.at(0) === 3, 'at');
+  assert(s.list.findLast((x: number) => x < 3) === 2, 'findLast');
+  assert(s.list.findLastIndex((x: number) => x < 3) === 2, 'findLastIndex');
+  assert(s.list.lastIndexOf(1) === 1, 'lastIndexOf');
+  assert(same(s.list.slice(1), [1, 2]) && same(s.list.concat([9]), [3, 1, 2, 9]), 'slice / concat');
+  assert(same([...s.list.entries()], [[0, 3], [1, 1], [2, 2]]), 'entries');
+  assert(same([...s.list.keys()], [0, 1, 2]) && same([...s.list.values()], [3, 1, 2]), 'keys / values');
+  assert(same(s.list.toSorted(), [1, 2, 3]) && same(s.list.toReversed(), [2, 1, 3]), 'toSorted / toReversed');
+  assert(same(s.list.with(0, 7), [7, 1, 2]) && same(s.list.toSpliced(0, 1), [1, 2]), 'with / toSpliced');
+  assert(same(api.readStore('list'), [3, 1, 2]), 'non-mutating methods leave the array alone');
+  const each: number[] = [];
+  s.list.forEach((x: number) => each.push(x));
+  assert(same(each, [3, 1, 2]), 'forEach');
+
+  // they are tracked reads on the current array
+  const sum = watch(() => s.list.reduce((a: number, b: number) => a + b, 0));
+  s.list.push(4);
+  s.list.splice(0, 1, 10); // an index assignment wakes only that index in the default 'grained' mode
+  assert(sum.seen.length >= 2, 'reduce is tracked by push');
+  assert(sum.seen[sum.seen.length - 1] === 17, 'reduce sees the latest array');
+  s.list.splice(0, 1);
+  assert(sum.seen[sum.seen.length - 1] === 7, 'reduce is tracked by splice');
+  sum.dispose();
+
+  // a later sort / whole-array assignment keeps working
+  s.list.reduce((a: number, b: number) => a + b, 0);
+  s.list.sort((a: number, b: number) => b - a);
+  assert(same(api.readStore('list'), [4, 2, 1]), 'sort after reduce');
+  s.list = [5, 6];
+  assert(same(api.readStore('list'), [5, 6]), 'assignment after reduce');
+  s.list.reverse();
+  assert(same(api.readStore('list'), [6, 5]), 'reverse after reduce');
+
+  // mutating methods route through the store: fill / copyWithin
+  const wake = watch(() => JSON.stringify(s.list()));
+  s.list.fill(0, 1);
+  assert(same(api.readStore('list'), [6, 0]), 'fill writes the store');
+  assert(wake.seen.length === 2, 'fill wakes the array');
+  s.list.push(7, 8);
+  s.list.copyWithin(0, 2);
+  assert(same(api.readStore('list'), [7, 8, 7, 8]), 'copyWithin writes the store');
+  wake.dispose();
+
+  const filler = { f: 1, nested: { g: 1 } };
+  s.objs.fill(filler);
+  filler.f = 2; filler.nested.g = 2;
+  const filled = api.readStore('objs') as any[];
+  assert(filled.every((x) => x.f === 1 && x.nested.g === 1), 'fill copies the value');
+  assert(new Set(filled).size === filled.length && filled[0].nested !== filled[1].nested, 'fill does not share one object between slots');
+  s.objs.copyWithin(1, 0);
+  const copied = api.readStore('objs') as any[];
+  assert(copied[0] !== copied[1], 'copyWithin does not alias elements');
+
+  // data keys named like array methods stay data keys on objects
+  assert(s.cfg.values() === 1 && s.cfg.keys() === 2 && s.cfg.at() === 3 && s.cfg.join() === 4, 'object keys named like array methods read as data');
+  s.cfg.values = 5;
+  assert(api.readStore('cfg.values') === 5, 'object key named like an array method is writable');
+  api.destroy();
+}
+
 console.log('All regression tests passed.');

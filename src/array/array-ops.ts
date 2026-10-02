@@ -9,6 +9,17 @@ export const ARRAY_QUERY_METHODS = new Set([
 export const ARRAY_MUTATION_METHODS = new Set([
   'push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'
 ]);
+// The rest of Array.prototype. These names are only array methods when the node currently holds an
+// array (an object may use `values`, `keys`, `at`, `join` ... as data keys), unlike the sets above.
+export const ARRAY_EXTRA_QUERY_METHODS = new Set([
+  'at', 'concat', 'entries', 'findLast', 'findLastIndex', 'flat', 'flatMap', 'forEach', 'join', 'keys',
+  'lastIndexOf', 'reduce', 'reduceRight', 'slice', 'toLocaleString', 'toReversed', 'toSorted', 'toSpliced',
+  'values', 'with',
+]);
+export const ARRAY_EXTRA_MUTATION_METHODS = new Set(['copyWithin', 'fill']);
+const isMutationMethod = (method: string): boolean =>
+  ARRAY_MUTATION_METHODS.has(method) || ARRAY_EXTRA_MUTATION_METHODS.has(method);
+
 export const ARRAY_METHODS = new Set([
   ...ARRAY_QUERY_METHODS,
   ...ARRAY_MUTATION_METHODS,
@@ -29,7 +40,21 @@ const ARRAY_MUTATION_HANDLERS: Record<string, MutationHandler> = {
   },
   sort:    (a, args) => a.sort(args[0] as ((x: unknown, y: unknown) => number) | undefined),
   reverse: (a) => a.reverse(),
+  // Native fill/copyWithin put one object in several slots; every repeat gets its own copy.
+  fill:    (a, args) => unshare(a, a.fill(args[0], args[1] as number | undefined, args[2] as number | undefined)),
+  copyWithin: (a, args) => unshare(a, a.copyWithin(Number(args[0]), Number(args[1]), args[2] as number | undefined)),
 };
+
+function unshare(a: unknown[], result: unknown[]): unknown[] {
+  const seen = new Set<unknown>();
+  for (let i = 0; i < a.length; i++) {
+    const item = a[i];
+    if (!isBranch(item)) continue;
+    if (seen.has(item)) a[i] = ownValue(item);
+    else seen.add(item);
+  }
+  return result;
+}
 
 /** Applies `method` to `arr` in place with native return semantics (push→length, pop→removed, splice→removed[] ...). */
 export function applyArrayMutation(arr: unknown[], method: string, args: readonly unknown[] = []): unknown {
@@ -100,18 +125,23 @@ const FAST_OPS = new Map<string, FastOp>([
   }],
 ]);
 
-/** Copies the item arguments of push/unshift/splice, so the array never aliases the caller's objects. */
+// Item arguments per method: [first, end) argument indexes that become stored values.
+const ITEM_ARGS: Record<string, readonly [number, number]> = {
+  push: [0, Infinity], unshift: [0, Infinity], splice: [2, Infinity], fill: [0, 1],
+};
+
+/** Copies the item arguments of push/unshift/splice/fill, so the array never aliases the caller's objects. */
 export function ownItemArgs(method: string, args: readonly unknown[]): readonly unknown[] {
-  const from = method === 'push' || method === 'unshift' ? 0 : method === 'splice' ? 2 : -1;
-  if (from < 0 || !args.some((a, i) => i >= from && isBranch(a))) return args;
-  return args.map((a, i) => (i >= from ? ownValue(a) : a));
+  const range = ITEM_ARGS[method];
+  if (!range || !args.some((a, i) => i >= range[0] && i < range[1] && isBranch(a))) return args;
+  return args.map((a, i) => (i >= range[0] && i < range[1] ? ownValue(a) : a));
 }
 
 /** store.<path>.<method>(...args): queries run on the snapshot, mutations copy-on-write and commit. */
 export function arrayOp(host: ArrayOpHost, path: string, method: string, rawArgs: readonly unknown[], current?: unknown): unknown {
   const cur = Array.isArray(current) ? current : host.read(path);
   if (!Array.isArray(cur)) return undefined;
-  if (ARRAY_QUERY_METHODS.has(method)) return runArrayQuery(cur, method, rawArgs);
+  if (!isMutationMethod(method)) return runArrayQuery(cur, method, rawArgs);
   const args = ownItemArgs(method, rawArgs);
 
   const fastOp = FAST_OPS.get(method);
@@ -122,7 +152,7 @@ export function arrayOp(host: ArrayOpHost, path: string, method: string, rawArgs
 
   const arr = [...cur];
   const result = applyArrayMutation(arr, method, args);
-  if (result !== undefined || ARRAY_MUTATION_METHODS.has(method)) host.batch(() => host.commit(path, arr));
+  if (result !== undefined || isMutationMethod(method)) host.batch(() => host.commit(path, arr));
   return result;
 }
 

@@ -300,9 +300,10 @@ that index. Other mutations copy the array, apply the method, and commit it as o
 batched write. With `{ preciseMutationWake: true }` in `grained` mode, a `splice` that starts after index 0
 skips the untouched prefix.
 
-Only the methods above are proxied. For anything else (`reduce`, `forEach`, `slice`,
-`flatMap`), call the array first and use the native method on the returned array:
-`store.history().reduce(...)`.
+Every other `Array.prototype` method works on an array node too: non-mutating ones (`reduce`,
+`slice`, `join`, `at`, `flatMap`, `toSorted`, ...) are tracked reads of the current array, and
+`fill` / `copyWithin` commit like the mutations above. On an object node those names stay
+ordinary data keys (`store.config.values` reads the `values` key).
 
 Replacing one element or editing a field of one element wakes that element's own paths
 (`services.0`, `services.0.rps`) but not the array node. To make an array consumer such as
@@ -836,14 +837,6 @@ Import the entry once during bootstrap: `import '@adsq/solid-signal-store/jsnq'`
 
 See [TypeScript](#typescript): use `api.setValue`, a typed write view, or an untyped store.
 Also check that the state type is a `type` alias and not an `interface`.
-
-### `store.list.reduce(...)` does not return the reduced value
-
-Only the array methods listed under [Arrays](#arrays) are proxied. Any other name is treated
-as a child path, so `store.list.reduce(fn)` ignores `fn` and returns the native
-`Array.prototype.reduce` function, and the path it creates can make a later whole-array write
-(`sort`, assignment) throw. Use the native method on the array value:
-`store.list().reduce(...)`.
 
 ### A key called `filter`, `length`, `query`, or `mutate` cannot be read
 
