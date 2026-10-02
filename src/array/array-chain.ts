@@ -1,7 +1,6 @@
 // Fluent ArrayChain over a narrow ArrayMutator (read + commit + batch). Queries use native methods on the
 // snapshot; mutations copy-on-write, batch and commit. Predicate-or-value sugar lives here only.
 
-import { ownValue } from '../internal/util';
 
 export interface ArrayMutator {
   read(path: string): unknown;
@@ -40,23 +39,23 @@ export class ArrayChain<T = unknown> {
   private arr(): T[] { return readArr<T>(this.m, this.p); }
 
   // Mutations (chainable; native return values are swallowed)
-  push(...v: T[]): this { return v.length ? this.run(a => a.push(...v.map(ownValue))) : this; }
-  unshift(...v: T[]): this { return v.length ? this.run(a => a.unshift(...v.map(ownValue))) : this; }
+  push(...v: T[]): this { return v.length ? this.run(a => a.push(...v)) : this; }
+  unshift(...v: T[]): this { return v.length ? this.run(a => a.unshift(...v)) : this; }
   pop(): this { return this.run(a => a.pop()); }
   shift(): this { return this.run(a => a.shift()); }
   reverse(): this { return this.run(a => a.reverse()); }
   sort(fn?: (x: T, y: T) => number): this { return this.run(a => a.sort(fn)); }
-  splice(start: number, del = 0, ...items: T[]): this { return this.run(a => a.splice(start, del, ...items.map(ownValue))); }
+  splice(start: number, del = 0, ...items: T[]): this { return this.run(a => a.splice(start, del, ...items)); }
 
   update(i: number, val: T): this {
     return this.run(a => {
       if (i < 0 || i >= a.length) throw new Error(`Index ${i} out of bounds for ${this.p}`);
-      a[i] = ownValue(val);
+      a[i] = val;
     });
   }
   updateByFind(pred: T | Predicate<T>, val: T): this {
     const f = asPredicate(pred);
-    return this.run(a => { const i = a.findIndex(f); if (i !== -1) a[i] = ownValue(val); });
+    return this.run(a => { const i = a.findIndex(f); if (i !== -1) a[i] = val; });
   }
   delete(pred: T | Predicate<T>): this {
     const f = asPredicate(pred);
@@ -93,7 +92,7 @@ class FilteredArrayChain<T> extends ArrayChain<T> {
       let matchCount = 0;
       for (let idx = 0; idx < a.length; idx++) {
         if (!matches(a[idx]!, idx, a)) continue;
-        if (matchCount++ === i) { a[idx] = ownValue(val); break; }
+        if (matchCount++ === i) { a[idx] = val; break; }
       }
     });
     return this;

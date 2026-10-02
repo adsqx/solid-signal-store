@@ -125,24 +125,13 @@ const FAST_OPS = new Map<string, FastOp>([
   }],
 ]);
 
-// Item arguments per method: [first, end) argument indexes that become stored values.
-const ITEM_ARGS: Record<string, readonly [number, number]> = {
-  push: [0, Infinity], unshift: [0, Infinity], splice: [2, Infinity], fill: [0, 1],
-};
-
-/** Copies the item arguments of push/unshift/splice/fill, so the array never aliases the caller's objects. */
-export function ownItemArgs(method: string, args: readonly unknown[]): readonly unknown[] {
-  const range = ITEM_ARGS[method];
-  if (!range || !args.some((a, i) => i >= range[0] && i < range[1] && isBranch(a))) return args;
-  return args.map((a, i) => (i >= range[0] && i < range[1] ? ownValue(a) : a));
-}
-
 /** store.<path>.<method>(...args): queries run on the snapshot, mutations copy-on-write and commit. */
 export function arrayOp(host: ArrayOpHost, path: string, method: string, rawArgs: readonly unknown[], current?: unknown): unknown {
   const cur = Array.isArray(current) ? current : host.read(path);
   if (!Array.isArray(cur)) return undefined;
   if (!isMutationMethod(method)) return runArrayQuery(cur, method, rawArgs);
-  const args = ownItemArgs(method, rawArgs);
+  // Item arguments are stored by reference, as with native arrays and in the Angular store.
+  const args = rawArgs;
 
   const fastOp = FAST_OPS.get(method);
   if (fastOp) {

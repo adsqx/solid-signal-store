@@ -49,20 +49,18 @@ function watch(read: () => unknown) {
   outside2.q = 2;
   assert(api.readStore('ext.q') === 1, 'setValue copies outside objects');
 
-  // array methods copy their item arguments
+  // array methods keep items by reference, as native arrays and the Angular store do
   const item = { v: 10, inner: { w: 1 } };
   s.list.push(item);
   s.list.unshift(item);
   s.list.splice(1, 0, item);
-  item.v = 11; item.inner.w = 2;
   const list = api.readStore('list') as any[];
-  assert(same(list.map((x) => x.v), [10, 10, 1, 10]) , 'push/unshift/splice copy items');
-  assert(list[0] !== list[1] && list[1] !== list[3], 'each inserted item is its own copy');
-  assert(list[0].inner.w === 1, 'nested item values copied');
+  assert(list[3] === item && list[0] === item, 'push/unshift keep an outside item by reference');
+  assert(same(list.map((x) => x.v), [10, 10, 1, 10]), 'push/unshift/splice values');
+  s.list.splice(4, 1);
   const chainItem = { v: 20 };
   s.list.array().push(chainItem);
-  chainItem.v = 21;
-  assert((api.readStore('list.4') as any).v === 20, 'array chain copies items');
+  assert((api.readStore('list') as any[])[4] === chainItem, 'array chain keeps items by reference too');
 
   // cyclic input is copied without recursion errors
   const cyc: any = { a: 1 }; cyc.self = cyc;
@@ -185,9 +183,8 @@ function watch(read: () => unknown) {
 
   const filler = { f: 1, nested: { g: 1 } };
   s.objs.fill(filler);
-  filler.f = 2; filler.nested.g = 2;
   const filled = api.readStore('objs') as any[];
-  assert(filled.every((x) => x.f === 1 && x.nested.g === 1), 'fill copies the value');
+  assert(filled.every((x) => x.f === 1 && x.nested.g === 1), 'fill writes the value to every slot');
   assert(new Set(filled).size === filled.length && filled[0].nested !== filled[1].nested, 'fill does not share one object between slots');
   s.objs.copyWithin(1, 0);
   const copied = api.readStore('objs') as any[];
