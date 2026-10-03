@@ -43,7 +43,7 @@ Consumers of the published package can install it as a skill; see the README sec
   assert against it, so an API change usually means updating it too.
 - Match the surrounding code: no new dependencies, no framework fighting, no duplicated
   path logic (path syntax, parsing and caches live in jsnq's dot paths, `@adsq/jsnq/data-engine`;
-  `src/internal/path.ts` maps them to the store's names and `src/utils/path-utils.ts` is a frozen facade).
+  `src/internal/path.ts` maps them to the store's names).
 
 ## Verify before proposing a change
 

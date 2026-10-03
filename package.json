@@ -52,8 +52,6 @@
     "bench:store": "bun --conditions browser test/store-throughput-bench.ts",
     "test:types": "tsc --noEmit --strict --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM --skipLibCheck test/types-proxy-contract.ts",
     "test:draft-contract": "bun --conditions browser test/draft-contract.test.ts",
-    "test:path-core": "bun test/path-core-parity.test.ts",
-    "test:path-utils-public": "bun test/path-utils-public-api.test.ts",
     "test:array-methods": "bun --conditions browser test/array-methods-contract.test.ts",
     "test:proxy-delete": "bun --conditions browser test/proxy-delete-semantics.test.ts",
     "test:wakeup-batch": "bun --conditions browser test/wakeup-batch-reactivity.test.ts",

@@ -945,16 +945,16 @@ bun run install:browsers && bun run test:browser   # Playwright against the demo
 ## Bundle Size
 
 Measured from the built ESM (`bun run build`) with esbuild minification, as of version
-0.1.5. `solid-js` and `@adsq/jsnq` remain external peers. 1 kB is 1,000 bytes.
+0.2.0. `solid-js` and `@adsq/jsnq` remain external peers. 1 kB is 1,000 bytes.
 
 | Entry | Minified | Gzip | Brotli |
 | --- | ---: | ---: | ---: |
-| Store core (`@adsq/solid-signal-store`) | 26.4 kB | 8.8 kB | 8.0 kB |
-| Optional JSNQ bridge (`/jsnq`) | 1.9 kB | 0.9 kB | 0.8 kB |
-| Optional devtools (`/devtools`) | 0.8 kB | 0.4 kB | 0.4 kB |
+| Store core (`@adsq/solid-signal-store`) | 26.0 kB | 9.0 kB | 8.3 kB |
+| Optional JSNQ bridge (`/jsnq`) | 1.7 kB | 0.9 kB | 0.8 kB |
+| Optional devtools (`/devtools`) | 1.0 kB | 0.5 kB | 0.5 kB |
 
-The production browser demo, including Solid and the JSNQ operators it uses, is 58.4 kB
-minified and 19.1 kB gzip (`bun run browser-demo:build`). To reproduce an entry:
+The production browser demo, including Solid and the JSNQ operators it uses, is 59.3 kB
+minified and 19.9 kB gzip (`bun run browser-demo:build`). To reproduce an entry:
 
 ```sh
 bun run build

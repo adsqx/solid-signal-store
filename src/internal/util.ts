@@ -3,32 +3,6 @@ import { createMutationResult, type JsonMutationResult } from '@adsq/jsnq/data-e
 /** True for non-null objects (arrays included, functions excluded) — the "branch" test used across the store. */
 export const isBranch = (value: unknown): value is object => value !== null && typeof value === 'object';
 
-/**
- * Insertion-order (FIFO) bounded Map cache. Inserting past `limit` evicts the oldest entry;
- * reads never reorder. Callers cache only after a miss, so `set` always inserts a new key.
- */
-export class BoundedCache<K, V> {
-  private readonly map = new Map<K, V>();
-
-  constructor(private readonly limit: number) {}
-
-  get(key: K): V | undefined {
-    return this.map.get(key);
-  }
-
-  /** Stores `value` and returns it, so call sites can `return cache.set(key, compute())`. */
-  set(key: K, value: V): V {
-    const map = this.map;
-    map.set(key, value);
-    if (map.size > this.limit) map.delete(map.keys().next().value as K);
-    return value;
-  }
-
-  clear(): void {
-    this.map.clear();
-  }
-}
-
 // Mutation-result builders. `existed` defaults to "previous is not undefined".
 
 /** A `set` of one path. */

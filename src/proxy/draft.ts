@@ -4,7 +4,8 @@
 // are exactly those of `store.a.b = v`. Each proxy reads its path's CURRENT value on every access.
 
 import { cloneJsonData } from '@adsq/jsnq/data-engine';
-import { BoundedCache, isBranch } from '../internal/util';
+import { GenerationalCache } from '@adsq/jsnq/data-engine';
+import { isBranch } from '../internal/util';
 import type { ProxyContext } from './types';
 
 const MUTATORS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin']);
@@ -13,7 +14,7 @@ const HAS_OWN = Object.prototype.hasOwnProperty;
 
 interface View { readonly proxy: object; readonly array: boolean }
 const VIEWS = new WeakMap<object, { ctx: ProxyContext; path: string }>(); // draft proxy -> its location
-const CACHES = new WeakMap<ProxyContext, BoundedCache<string, View>>(); // per store: path -> proxy
+const CACHES = new WeakMap<ProxyContext, GenerationalCache<View>>(); // per store: path -> proxy
 
 const childPath = (parent: string, key: string): string => (parent ? `${parent}.${key}` : key);
 
@@ -36,7 +37,7 @@ function unwrap(value: unknown): unknown {
 function viewOf(ctx: ProxyContext, path: string, value: unknown): unknown {
   if (!isBranch(value)) return value;
   const array = Array.isArray(value);
-  const cache = CACHES.get(ctx) ?? (CACHES.set(ctx, new BoundedCache(1024)), CACHES.get(ctx)!);
+  const cache = CACHES.get(ctx) ?? (CACHES.set(ctx, new GenerationalCache<View>(1024)), CACHES.get(ctx)!);
   const hit = cache.get(path);
   if (hit && hit.array === array) return hit.proxy;
   const proxy = new Proxy(array ? [] : {}, new DraftHandler(ctx, path));

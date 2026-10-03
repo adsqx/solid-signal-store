@@ -3,7 +3,8 @@
 import { createSignal, type Accessor, type Setter } from 'solid-js';
 import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
 import { enumerateAncestors, normalizePath } from '../internal/path';
-import { BoundedCache, isBranch } from '../internal/util';
+import { GenerationalCache } from '@adsq/jsnq/data-engine';
+import { isBranch } from '../internal/util';
 import type { SolidProxyMetrics, SolidStoreReactivity } from '../core/types';
 import { SignalTrie } from './signal-trie';
 import { WAKE_MODE_BRANCH, type SolidWakeMode, type StoreMutator } from './types';
@@ -28,7 +29,7 @@ export class WakeEngine implements SolidStoreReactivity {
   // Per-query branch subscriptions ($liveQuery / $subscribe): a path here means "wake this branch signal
   // whenever a descendant changes", without flipping the whole store into container mode.
   private branchSubs = new Map<string, number>();
-  private ancestorCache = new BoundedCache<string, string[]>(1000);
+  private ancestorCache = new GenerationalCache<string[]>(1000);
 
   constructor(
     private readonly mutator: StoreMutator,
