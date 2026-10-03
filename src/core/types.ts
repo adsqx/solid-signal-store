@@ -1,4 +1,5 @@
 import type { JsonMutationResult } from '@adsq/jsnq/data-engine';
+import type { Draft as JsonDraft } from '@adsq/jsnq/core/types';
 import type { SolidWakeMode } from '../proxy/types';
 import type { ProxyMetrics, SolidDevtoolsAdapter } from './dev-service';
 import type { SolidJsnqBridge } from '../jsnq/solid-pipeline-bridge';
@@ -37,13 +38,7 @@ export type StoreLiveQuery<T> = (() => T) & {
 };
 
 /** Deep-mutable plain data type: strips `readonly`, recurses into objects and arrays; functions and primitives as is. */
-export type Draft<T> = T extends (...args: any[]) => unknown
-  ? T
-  : T extends readonly (infer U)[]
-    ? Draft<U>[]
-    : T extends object
-      ? { -readonly [K in keyof T]: Draft<T[K]> }
-      : T;
+export type Draft<T> = JsonDraft<T>;
 
 export type StoreLeaf<T> = (() => T) & {
   readonly $val: T;
