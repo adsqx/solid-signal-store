@@ -1,6 +1,6 @@
 {
   "name": "@adsq/solid-signal-store",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Fine-grained SolidJS store built on a callable nested proxy: read with store.user.name(), write with plain assignment, and wake only the paths a component consumes. Optional JSNQ queries and devtools entries.",
   "repository": {
     "type": "git",
@@ -81,14 +81,14 @@
   },
   "peerDependencies": {
     "solid-js": ">=1.8.0 <2.0.0",
-    "@adsq/jsnq": "^0.1.0"
+    "@adsq/jsnq": "^0.2.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "solid-js": "1.9.14",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0",
-    "@adsq/jsnq": "^0.1.0"
+    "@adsq/jsnq": "^0.2.0"
   },
   "keywords": [
     "solid",

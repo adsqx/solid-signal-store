@@ -903,7 +903,7 @@ boundary.
 | Requirement | Supported |
 | --- | --- |
 | `solid-js` | `>=1.8.0 <2.0.0` (peer). Developed and tested against 1.9.14. Solid 2 is not supported. |
-| `@adsq/jsnq` | `^0.1.0` (peer). |
+| `@adsq/jsnq` | `^0.2.0` (peer). |
 | TypeScript | Declarations are bundled. Developed with TypeScript 5.4+. |
 | Module format | ESM only (`"type": "module"`); there is no CommonJS build. |
 | Language level | Built to ES2022. Needs `Proxy` and `WeakRef`; `FinalizationRegistry` is used when present. |
