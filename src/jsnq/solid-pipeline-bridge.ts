@@ -7,13 +7,7 @@
 
 import { PipelineWrapper } from '@adsq/jsnq/core/pipeline-wrapper';
 import { cloneJsonData as cloneJson } from '@adsq/jsnq/data-engine';
-import {
-  applyDeepSugarPatch,
-  collectPipelineIntent,
-  isDeepSugarAction,
-  tryFastPipelineMutation,
-  tryFastStructuralMutation,
-} from '@adsq/jsnq/core/pipeline-fastpath';
+import { collectPipelineIntent, tryFastMutation, tryFastPipelineMutation } from '@adsq/jsnq/core/pipeline-fastpath';
 
 export interface SolidPipelineOptions {
   isRoot?: boolean;
@@ -109,17 +103,9 @@ export function applyPipelineMutation(
       }
     }
 
-    const fast = tryFastPipelineMutation(currentValue, ops, { collectAffectedPaths: false });
+    // jsnq's fast cascade, shared with the Angular store: flat copy-on-write, structural shortcut, deep sugar patch.
+    const fast = tryFastMutation(currentValue, ops, { collectAffectedPaths: false });
     if (fast) return fast.value;
-
-    const intent = collectPipelineIntent(ops);
-    const structural = tryFastStructuralMutation(currentValue, intent);
-    if (structural) return structural.value;
-
-    // where + update({patch}) on object trees is not representable in the raw pipeline; the shared helper defines it.
-    if (intent.criteria.length > 0 && intent.actions.length > 0 && intent.actions.every(isDeepSugarAction)) {
-      return applyDeepSugarPatch(currentValue, intent.criteria, intent.actions);
-    }
 
     // Standard ops (update('key', valOrFn), replace, deletes, moves, multi-op). Guarded so unexpected
     // null/undefined edge cases degrade to a structural clone (undefined props may drop) instead of throwing.
