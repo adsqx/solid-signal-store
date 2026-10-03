@@ -6,7 +6,7 @@
  */
 
 import { PipelineWrapper } from '@adsq/jsnq/core/pipeline-wrapper';
-import { cloneJsonData as cloneJson } from '@adsq/jsnq/core/data-engine';
+import { cloneJsonData as cloneJson } from '@adsq/jsnq/data-engine';
 import {
   applyDeepSugarPatch,
   collectPipelineIntent,

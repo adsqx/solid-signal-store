@@ -26,7 +26,8 @@ Consumers of the published package can install it as a skill; see the README sec
   plain-JSON write view), `wake-engine.ts` (signals and wake modes), `signal-trie.ts`, `types.ts`.
 - `src/array/` — array method dispatch (`array-ops.ts`), the fluent chain (`array-chain.ts`)
   and the `solid-array.ts` barrel.
-- `src/internal/` — `path.ts` (path parsing; also published as `InternalPath`) and `util.ts`
+- `src/internal/` — `path.ts` (the store's path names over the jsnq dot paths shared with the
+  Angular store; also published as `InternalPath`) and `util.ts`
   (shared guards, bounded cache, mutation-result builders).
 - `src/jsnq/solid-pipeline-bridge.ts` — the optional JSNQ integration. The engine itself
   is the separate `@adsq/jsnq` package; do not vendor or fork it here.
@@ -41,8 +42,8 @@ Consumers of the published package can install it as a skill; see the README sec
 - **Keep the demo in sync.** `examples/browser-demo` is not decoration — the browser tests
   assert against it, so an API change usually means updating it too.
 - Match the surrounding code: no new dependencies, no framework fighting, no duplicated
-  path logic (`src/internal/path.ts` is the single source of truth for path parsing;
-  `src/utils/path-utils.ts` is only a frozen facade over it).
+  path logic (path syntax, parsing and caches live in jsnq's dot paths, `@adsq/jsnq/data-engine`;
+  `src/internal/path.ts` maps them to the store's names and `src/utils/path-utils.ts` is a frozen facade).
 
 ## Verify before proposing a change
 
